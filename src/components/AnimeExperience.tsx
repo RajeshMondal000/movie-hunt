@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -130,55 +130,222 @@ export function AnimeHomePage() {
   )
 }
 
+
+const ANIME_DISCOVERY_GENRES = [
+  'Action',
+  'Adventure',
+  'Comedy',
+  'Drama',
+  'Ecchi',
+  'Fantasy',
+  'Friendship',
+  'Magic',
+  'Military',
+  'Mystery',
+  'Parody',
+  'Police',
+  'Psychological',
+  'Romance',
+  'School',
+  'Sci-Fi',
+  'Sports',
+  'Super Power',
+  'Supernatural',
+  'Thriller',
+] as const
+
+function toKitsuGenreSlug(genre: string): string {
+  return genre
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+
+
 export function AnimeDiscoverPage() {
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null)
   const [page, setPage] = useState(1)
+
   useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 350)
+    const timer = window.setTimeout(
+      () => setDebouncedQuery(query.trim()),
+      350,
+    )
+
     return () => window.clearTimeout(timer)
   }, [query])
+
+  const genreParam = selectedGenre
+    ? `&genre=${encodeURIComponent(toKitsuGenreSlug(selectedGenre))}`
+    : ''
+
   const url = debouncedQuery
-    ? `/api/anime/search?query=${encodeURIComponent(debouncedQuery)}&page=${page}`
-    : `/api/anime/popular?page=${page}`
+    ? `/api/anime/search?query=${encodeURIComponent(debouncedQuery)}&page=${page}${genreParam}`
+    : `/api/anime/popular?page=${page}${genreParam}`
+
   const data = useAnimeData<KitsuAnimeList>(url)
-  const genres = useMemo(() => [...new Set((data.data?.results ?? []).flatMap((anime) => anime.genres))].sort(), [data.data])
-  const filtered = selectedGenre
-    ? (data.data?.results ?? []).filter((anime) => anime.genres.some((genre) => genre.toLowerCase() === selectedGenre.toLowerCase()))
-    : data.data?.results ?? []
 
   function selectGenre(genre: string | null) {
     setSelectedGenre(genre)
     setPage(1)
   }
 
+  const anime = data.data?.results ?? []
+
   return (
     <div>
-      <AnimePageIntro eyebrow="Kitsu anime catalogue" title="Find your next series." description="Search anime titles and browse the genres found in the current catalogue results." />
+      <AnimePageIntro
+        eyebrow="Kitsu anime catalogue"
+        title="Find your next series."
+        description="Search anime titles and explore the catalogue using genre filters. Filters are applied across Kitsu's catalogue, not just the current page."
+      />
+
+      {/* Search */}
       <div className="mb-6 flex max-w-2xl items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3">
         <Search size={17} className="shrink-0 text-zinc-500" />
-        <input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1) }} placeholder="Search anime titles…" className="w-full bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-600" />
-        {query && <button type="button" onClick={() => setQuery('')} className="text-xs text-zinc-500 hover:text-white">Clear</button>}
+
+        <input
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value)
+            setPage(1)
+          }}
+          placeholder="Search anime titles..."
+          className="w-full bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
+        />
+
+        {query && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery('')
+              setPage(1)
+            }}
+            className="text-xs text-zinc-500 hover:text-white"
+          >
+            Clear
+          </button>
+        )}
       </div>
-      {genres.length > 0 && <div className="mb-7">
-        <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">Browse genres in these results</div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => selectGenre(null)} className={`rounded-full border px-3 py-2 text-xs transition ${selectedGenre === null ? 'border-violet-300/30 bg-violet-300/10 text-violet-200' : 'border-white/10 text-zinc-400 hover:bg-white/5'}`}>All genres</button>
-          {genres.map((genre) => <button key={genre} type="button" onClick={() => selectGenre(genre)} className={`rounded-full border px-3 py-2 text-xs transition ${selectedGenre === genre ? 'border-violet-300/30 bg-violet-300/10 text-violet-200' : 'border-white/10 text-zinc-400 hover:bg-white/5'}`}>{genre}</button>)}
+
+      {/* Genre filters */}
+      <div className="mb-7">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">
+            Browse by genre
+          </div>
+
+          {selectedGenre && (
+            <button
+              type="button"
+              onClick={() => selectGenre(null)}
+              className="text-xs text-violet-300 hover:text-violet-200"
+            >
+              Clear filter
+            </button>
+          )}
         </div>
-      </div>}
-      <div className="mb-4 flex items-center justify-between gap-3"><h2 className="text-sm font-semibold text-zinc-300">{debouncedQuery ? `Results for “${debouncedQuery}”` : selectedGenre ?? 'Popular anime'}</h2><span className="text-xs text-zinc-600">{data.data?.totalResults?.toLocaleString() ?? '—'} titles</span></div>
-      <AnimeGrid anime={filtered} loading={data.loading || (Boolean(query.trim()) && query.trim() !== debouncedQuery)} error={data.error} emptyMessage="Try another title or clear the genre filter." />
-      {data.data && data.data.totalPages > 1 && <div className="mt-8 flex items-center justify-center gap-3">
-        <button disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 disabled:opacity-30">Previous</button>
-        <span className="text-xs text-zinc-500">Page {page} of {Math.min(data.data.totalPages, 500)}</span>
-        <button disabled={page >= Math.min(data.data.totalPages, 500)} onClick={() => setPage((current) => current + 1)} className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 disabled:opacity-30">Next</button>
-      </div>}
-      <p className="mt-5 text-[10px] text-zinc-600">Genre filters apply to the currently loaded page; the catalogue search and pagination are provided by Kitsu.</p>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => selectGenre(null)}
+            aria-pressed={selectedGenre === null}
+            className={`rounded-full border px-3 py-2 text-xs transition ${selectedGenre === null
+                ? 'border-violet-300/30 bg-violet-300/10 text-violet-200'
+                : 'border-white/10 text-zinc-400 hover:bg-white/5'
+              }`}
+          >
+            All genres
+          </button>
+
+          {ANIME_DISCOVERY_GENRES.map((genre) => (
+            <button
+              key={genre}
+              type="button"
+              aria-pressed={selectedGenre === genre}
+              onClick={() => selectGenre(genre)}
+              className={`rounded-full border px-3 py-2 text-xs transition ${selectedGenre === genre
+                  ? 'border-violet-300/30 bg-violet-300/10 text-violet-200'
+                  : 'border-white/10 text-zinc-400 hover:bg-white/5'
+                }`}
+            >
+              {genre}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Results heading */}
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-zinc-300">
+          {selectedGenre
+            ? `${selectedGenre} anime`
+            : debouncedQuery
+              ? `Results for "${debouncedQuery}"`
+              : 'Popular anime'}
+        </h2>
+
+        <span className="text-xs text-zinc-600">
+          {data.data?.totalResults?.toLocaleString() ?? '—'} titles
+        </span>
+      </div>
+
+      {/* No local filtering: Kitsu already returns filtered results. */}
+      <AnimeGrid
+        anime={anime}
+        loading={
+          data.loading ||
+          (Boolean(query.trim()) && query.trim() !== debouncedQuery)
+        }
+        error={data.error}
+        emptyMessage={
+          selectedGenre
+            ? `No anime found in ${selectedGenre}. Try another genre or clear the filter.`
+            : 'Try another title or clear your search.'
+        }
+      />
+
+      {/* Pagination uses the filtered total count. */}
+      {data.data && data.data.totalPages > 1 && (
+        <div className="mt-8 flex items-center justify-center gap-3">
+          <button
+            disabled={page <= 1 || data.loading}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 disabled:opacity-30"
+          >
+            Previous
+          </button>
+
+          <span className="text-xs text-zinc-500">
+            Page {page} of {Math.min(data.data.totalPages, 500)}
+          </span>
+
+          <button
+            disabled={
+              page >= Math.min(data.data.totalPages, 500) ||
+              data.loading
+            }
+            onClick={() => setPage((current) => current + 1)}
+            className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 disabled:opacity-30"
+          >
+            Next
+          </button>
+        </div>
+      )}
+
+      <p className="mt-5 text-[10px] text-zinc-600">
+        Genre filtering, search and pagination are handled by Kitsu across the catalogue.
+      </p>
     </div>
   )
 }
+
 
 function AnimeLibraryControls({ anime }: { anime: KitsuAnime }) {
   const { data: session, isPending } = authClient.useSession()

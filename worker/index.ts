@@ -2218,53 +2218,106 @@ app.delete('/api/reviews/:tmdbId', async (c) => {
 
 // Kitsu-backed anime discovery. Public catalogue pages are not copied wholesale into D1;
 // only metadata for anime explicitly added to a member's library is cached.
+
 app.get('/api/anime/popular', async (c) => {
   const page = validPage(c.req.query('page'))
+  const genre = (c.req.query('genre') ?? '').trim().toLowerCase()
+
+  if (genre && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(genre)) {
+    return c.json({ error: 'invalid_genre' }, 400)
+  }
+
   try {
-    const payload = await kitsuRequest<KitsuPayload>('/anime', {
+    const params: Record<string, string> = {
       sort: '-userCount',
       include: 'genres',
       'page[limit]': String(KITSU_PAGE_SIZE),
       'page[offset]': String((page - 1) * KITSU_PAGE_SIZE),
-    })
+    }
+
+    // Filter the complete Kitsu catalogue before pagination.
+    if (genre) {
+      params['filter[genres]'] = genre
+    }
+
+    const payload = await kitsuRequest<KitsuPayload>(
+      '/anime',
+      params,
+    )
+
     const results = normalizeKitsuPayload(payload)
     const totalResults = Number(payload.meta?.count ?? results.length)
+
     return c.json({
       page,
       results,
       totalResults,
-      totalPages: Math.max(1, Math.ceil(totalResults / KITSU_PAGE_SIZE)),
+      totalPages: Math.max(
+        1,
+        Math.ceil(totalResults / KITSU_PAGE_SIZE),
+      ),
+      appliedGenre: genre || null,
     })
   } catch (error) {
     return kitsuErrorResponse(c, error)
   }
 })
 
+
+
 app.get('/api/anime/search', async (c) => {
   const query = (c.req.query('query') ?? '').trim()
+  const genre = (c.req.query('genre') ?? '').trim().toLowerCase()
+
   if (!query || query.length > 100) {
-    return c.json({ error: 'invalid_query', message: 'Provide an anime search query between 1 and 100 characters.' }, 400)
+    return c.json({
+      error: 'invalid_query',
+      message: 'Provide an anime search query between 1 and 100 characters.',
+    }, 400)
   }
+
+  if (genre && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(genre)) {
+    return c.json({ error: 'invalid_genre' }, 400)
+  }
+
   const page = validPage(c.req.query('page'))
+
   try {
-    const payload = await kitsuRequest<KitsuPayload>('/anime', {
+    const params: Record<string, string> = {
       'filter[text]': query,
       include: 'genres',
       'page[limit]': String(KITSU_PAGE_SIZE),
       'page[offset]': String((page - 1) * KITSU_PAGE_SIZE),
-    })
+    }
+
+    // Text search and genre filtering are applied together.
+    if (genre) {
+      params['filter[genres]'] = genre
+    }
+
+    const payload = await kitsuRequest<KitsuPayload>(
+      '/anime',
+      params,
+    )
+
     const results = normalizeKitsuPayload(payload)
     const totalResults = Number(payload.meta?.count ?? results.length)
+
     return c.json({
       page,
       results,
       totalResults,
-      totalPages: Math.max(1, Math.ceil(totalResults / KITSU_PAGE_SIZE)),
+      totalPages: Math.max(
+        1,
+        Math.ceil(totalResults / KITSU_PAGE_SIZE),
+      ),
+      appliedGenre: genre || null,
     })
   } catch (error) {
     return kitsuErrorResponse(c, error)
   }
 })
+
 
 app.get('/api/anime/watchlist', async (c) => {
   try {
