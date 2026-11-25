@@ -2821,6 +2821,10 @@ app.get('/api/social/members', async (c) => {
   try {
     const member = await requireActiveMember(c)
     if (member instanceof Response) return member
+    // Guests cannot access the member directory.
+    if (member.isAnonymous || member.role === 'guest') {
+      return c.json({ members: [] })
+    }
     const db = getDb(c.env)
     const query = (c.req.query('query') ?? '').trim().slice(0, 60)
     const whereClause = query.length >= 2

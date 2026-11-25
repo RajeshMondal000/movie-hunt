@@ -12,8 +12,8 @@ export type AuthBindings = {
   ADMIN_EMAILS?: string
 }
 
-const APPROVAL_WINDOW_MS = 24 * 60 * 60 * 1000
-const GUEST_WINDOW_MS = 24 * 60 * 60 * 1000
+const APPROVAL_WINDOW_MS = 24 * 60 * 60 * 1000 // 24 hours
+const GUEST_WINDOW_MS = 5 * 60 * 60 * 1000    // 5 hours
 
 export function isAuthConfigured(env: AuthBindings): boolean {
   return Boolean(

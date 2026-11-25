@@ -303,7 +303,7 @@ function AuthControl() {
       {account?.isAnonymous && (
         <>
           <span className="rounded-lg border border-violet-400/20 bg-violet-400/5 px-2.5 py-1.5 text-[11px] text-violet-200">
-            Guest mode · 24h
+            Guest mode · 5h
           </span>
 
           <button
@@ -421,7 +421,7 @@ function LoginPage() {
 
       <p className="mt-3 text-xs leading-5 text-zinc-600">
         Explore Movie Hunt without registering. Guest accounts
-        last for 24 hours. You can connect Google later to
+        last for 5 hours. You can connect Google later to
         preserve your collection.
       </p>
       {error && <p className="mt-4 text-sm text-rose-300">{error}</p>}
