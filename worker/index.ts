@@ -9,7 +9,7 @@ type AppBindings = Env & AuthBindings & {
   GEMINI_API_KEY?: string
   GEMINI_MODEL?: string
 }
- type AppContext = Context<{ Bindings: AppBindings }>
+type AppContext = Context<{ Bindings: AppBindings }>
 
 type MemberRecord = {
   id: string
@@ -20,6 +20,7 @@ type MemberRecord = {
   approvalStatus?: 'pending' | 'approved' | 'rejected' | string
   approvalExpiresAt?: number
   approvedAt?: number | null
+  isAnonymous?: boolean
 }
 
 
@@ -595,6 +596,7 @@ app.get('/api/me', async (c) => {
         approvalStatus: member.approvalStatus ?? 'pending',
         approvalExpiresAt: member.approvalExpiresAt ?? null,
         approvedAt: member.approvedAt ?? null,
+        isAnonymous: member.isAnonymous === true,
       },
     })
   } catch (error) {
@@ -923,13 +925,13 @@ app.patch('/api/profile', async (c) => {
     }
 
     const name = [...body.name]
-    .filter((character) => {
-      const code = character.codePointAt(0) ?? 0
-      return code >= 0x20 && code !== 0x7f
-    })
-    .join('')
-    .trim()
-    .replace(/\s+/g, ' ')
+      .filter((character) => {
+        const code = character.codePointAt(0) ?? 0
+        return code >= 0x20 && code !== 0x7f
+      })
+      .join('')
+      .trim()
+      .replace(/\s+/g, ' ')
 
     if (name.length < 2 || name.length > 40) {
       return c.json({
@@ -968,7 +970,12 @@ app.get('/api/admin/pending-users', async (c) => {
         approvalExpiresAt: schema.authUser.approvalExpiresAt,
       })
       .from(schema.authUser)
-      .where(eq(schema.authUser.approvalStatus, 'pending'))
+      .where(
+        and(
+          eq(schema.authUser.approvalStatus, 'pending'),
+          eq(schema.authUser.isAnonymous, false),
+        ),
+      )
       .orderBy(desc(schema.authUser.createdAt))
       .limit(100)
 
@@ -1298,10 +1305,10 @@ function scoreRecommendationCandidate(
   const movieGenres = movie.genre_ids ?? []
   const genreAffinity = maxGenreWeight > 0 && movieGenres.length > 0
     ? Math.min(
-        1,
-        movieGenres.reduce((sum, id) => sum + (genreWeights.get(id) ?? 0), 0)
-          / (maxGenreWeight * Math.min(movieGenres.length, 2)),
-      )
+      1,
+      movieGenres.reduce((sum, id) => sum + (genreWeights.get(id) ?? 0), 0)
+      / (maxGenreWeight * Math.min(movieGenres.length, 2)),
+    )
     : 0
 
   const requestedGenreMatches = promptGenreIds.filter((id) => movieGenres.includes(id)).length
@@ -1928,9 +1935,9 @@ app.get('/api/watchlist', async (c) => {
     const db = getDb(c.env)
     const whereClause = requestedStatus
       ? and(
-          eq(schema.watchlistItems.userId, member.id),
-          eq(schema.watchlistItems.status, requestedStatus),
-        )
+        eq(schema.watchlistItems.userId, member.id),
+        eq(schema.watchlistItems.status, requestedStatus),
+      )
       : eq(schema.watchlistItems.userId, member.id)
 
     const items = await db
@@ -2298,10 +2305,12 @@ app.get('/api/anime/watchlist', async (c) => {
       .orderBy(desc(schema.animeWatchlistItems.updatedAt))
       .limit(200)
 
-    return c.json({ items: items.map((item) => ({
-      ...item,
-      genres: (() => { try { return JSON.parse(item.genresJson) as string[] } catch { return [] } })(),
-    })) })
+    return c.json({
+      items: items.map((item) => ({
+        ...item,
+        genres: (() => { try { return JSON.parse(item.genresJson) as string[] } catch { return [] } })(),
+      }))
+    })
   } catch (error) {
     console.error('Could not load anime watchlist:', error)
     return c.json({ error: 'could_not_load_anime_watchlist' }, 500)
@@ -2815,8 +2824,8 @@ app.get('/api/social/members', async (c) => {
     const db = getDb(c.env)
     const query = (c.req.query('query') ?? '').trim().slice(0, 60)
     const whereClause = query.length >= 2
-      ? and(eq(schema.authUser.approvalStatus, 'approved'), ne(schema.authUser.id, member.id), like(schema.authUser.name, `%${query.replace(/[%_]/g, '')}%`))
-      : and(eq(schema.authUser.approvalStatus, 'approved'), ne(schema.authUser.id, member.id))
+      ? and(eq(schema.authUser.approvalStatus, 'approved'), eq(schema.authUser.isAnonymous, false), ne(schema.authUser.id, member.id), like(schema.authUser.name, `%${query.replace(/[%_]/g, '')}%`))
+      : and(eq(schema.authUser.approvalStatus, 'approved'), eq(schema.authUser.isAnonymous, false), ne(schema.authUser.id, member.id))
     const [users, relationships] = await Promise.all([
       db.select({ id: schema.authUser.id, name: schema.authUser.name, image: schema.authUser.image, createdAt: schema.authUser.createdAt })
         .from(schema.authUser).where(whereClause).orderBy(desc(schema.authUser.createdAt)).limit(50),
@@ -2834,11 +2843,13 @@ app.get('/api/social/members', async (c) => {
         friendshipId: relation.id,
       })
     }
-    return c.json({ members: users.map((user) => ({
-      ...user,
-      relationship: relationByOther.get(user.id)?.status ?? 'none',
-      friendshipId: relationByOther.get(user.id)?.friendshipId ?? null,
-    })) })
+    return c.json({
+      members: users.map((user) => ({
+        ...user,
+        relationship: relationByOther.get(user.id)?.status ?? 'none',
+        friendshipId: relationByOther.get(user.id)?.friendshipId ?? null,
+      }))
+    })
   } catch (error) {
     console.error('Could not search social members:', error)
     return c.json({ error: 'could_not_search_members' }, 500)
@@ -2854,7 +2865,7 @@ app.get('/api/social/friends', async (c) => {
     const otherIds = [...new Set(relations.map((row) => row.userAId === member.id ? row.userBId : row.userAId))]
     const users = otherIds.length
       ? await db.select({ id: schema.authUser.id, name: schema.authUser.name, image: schema.authUser.image })
-          .from(schema.authUser).where(inArray(schema.authUser.id, otherIds))
+        .from(schema.authUser).where(inArray(schema.authUser.id, otherIds))
       : []
     const userById = new Map(users.map((user) => [user.id, user]))
     const decorate = (row: typeof relations[number]) => {
@@ -2876,12 +2887,33 @@ app.post('/api/social/requests', async (c) => {
   try {
     const member = await requireActiveMember(c)
     if (member instanceof Response) return member
+    if (
+      member.isAnonymous ||
+      member.approvalStatus !== 'approved'
+    ) {
+      return c.json(
+        {
+          error: 'approval_required',
+          message: 'Friend requests are available only to approved members.',
+        },
+        403,
+      )
+    }
     const body = await c.req.json().catch(() => null) as { targetUserId?: unknown } | null
     const targetUserId = typeof body?.targetUserId === 'string' ? body.targetUserId.trim() : ''
     if (!targetUserId || targetUserId === member.id) return c.json({ error: 'invalid_target_user' }, 400)
     const db = getDb(c.env)
-    const [target] = await db.select({ id: schema.authUser.id })
-      .from(schema.authUser).where(and(eq(schema.authUser.id, targetUserId), eq(schema.authUser.approvalStatus, 'approved'))).limit(1)
+    const [target] = await db
+      .select({ id: schema.authUser.id })
+      .from(schema.authUser)
+      .where(
+        and(
+          eq(schema.authUser.id, targetUserId),
+          eq(schema.authUser.approvalStatus, 'approved'),
+          eq(schema.authUser.isAnonymous, false),
+        ),
+      )
+      .limit(1)
     if (!target) return c.json({ error: 'member_not_found' }, 404)
     const [preferences] = await db.select({ allowFriendRequests: schema.socialPrivacy.allowFriendRequests })
       .from(schema.socialPrivacy).where(eq(schema.socialPrivacy.userId, targetUserId)).limit(1)

@@ -41,14 +41,16 @@ export function SocialFriendsPage() {
   const [busyId, setBusyId] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [canSendFriendRequests, setCanSendFriendRequests] = useState(false)
 
   const loadOverview = useCallback(async () => {
-    const [friendData, feedData, shareData, privacyData, memberData] = await Promise.all([
+    const [friendData, feedData, shareData, privacyData, memberData, accountData] = await Promise.all([
       socialRequest<{ friends: Relationship[]; incomingRequests: Relationship[]; outgoingRequests: Relationship[] }>('/api/social/friends'),
       socialRequest<{ activities: ActivityItem[] }>('/api/social/feed'),
       socialRequest<{ shares: SharedItem[] }>('/api/social/shares/inbox'),
       socialRequest<{ privacy: Privacy }>('/api/social/privacy'),
       socialRequest<{ members: SocialMember[] }>('/api/social/members'),
+      socialRequest<{ user: { isAnonymous: boolean; approvalStatus: string } }>('/api/me'),
     ])
     setFriends(friendData.friends)
     setIncoming(friendData.incomingRequests)
@@ -57,6 +59,10 @@ export function SocialFriendsPage() {
     setShares(shareData.shares)
     setPrivacy(privacyData.privacy)
     setMembers(memberData.members)
+    setCanSendFriendRequests(
+      !accountData.user.isAnonymous &&
+      accountData.user.approvalStatus === 'approved'
+    )
   }, [])
 
   useEffect(() => {
@@ -67,7 +73,8 @@ export function SocialFriendsPage() {
       socialRequest<{ shares: SharedItem[] }>('/api/social/shares/inbox'),
       socialRequest<{ privacy: Privacy }>('/api/social/privacy'),
       socialRequest<{ members: SocialMember[] }>('/api/social/members'),
-    ]).then(([friendData, feedData, shareData, privacyData, memberData]) => {
+      socialRequest<{ user: { isAnonymous: boolean; approvalStatus: string } }>('/api/me'),
+    ]).then(([friendData, feedData, shareData, privacyData, memberData, accountData,]) => {
       if (!active) return
       setFriends(friendData.friends)
       setIncoming(friendData.incomingRequests)
@@ -76,6 +83,10 @@ export function SocialFriendsPage() {
       setShares(shareData.shares)
       setPrivacy(privacyData.privacy)
       setMembers(memberData.members)
+      setCanSendFriendRequests(
+        !accountData.user.isAnonymous &&
+        accountData.user.approvalStatus === 'approved'
+      )
       setError('')
     }).catch((err: unknown) => {
       if (active) setError(err instanceof Error ? err.message : 'Could not load your movie club.')
@@ -173,6 +184,19 @@ export function SocialFriendsPage() {
       {error && <p role="alert" className="rounded-xl border border-rose-400/20 bg-rose-400/5 p-3 text-xs text-rose-200">{error}</p>}
       {notice && <p className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 text-xs text-emerald-200">{notice}</p>}
 
+      {!canSendFriendRequests && (
+        <div className="rounded-xl border border-violet-300/15 bg-violet-300/[0.05] p-4">
+          <p className="text-sm font-semibold text-violet-200">
+            Community access is limited
+          </p>
+
+          <p className="mt-1 text-xs leading-5 text-zinc-400">
+            You can explore the community, but sending friend
+            requests requires an approved Google account.
+          </p>
+        </div>
+      )}
+
       <section className={sectionClass}>
         <h2 className={headingClass}><ShieldCheck size={17} className="text-violet-200" /> Your privacy</h2>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -187,7 +211,7 @@ export function SocialFriendsPage() {
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search approved members by name…" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-300/40" />
           <button disabled={busyId === 'search'} className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-300 px-4 py-2.5 text-xs font-bold text-zinc-950 disabled:opacity-60"><Search size={14} /> Search</button>
         </form>
-        {members.length === 0 ? <p className="text-xs text-zinc-500">No matching members. Try another name.</p> : <div className="grid gap-2 sm:grid-cols-2">{members.map((person) => <div key={person.id} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-black/15 p-3"><Avatar name={person.name} image={person.image} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-zinc-100">{person.name}</p><p className="text-[10px] text-zinc-600">{person.relationship === 'friends' ? 'Friend' : person.relationship === 'incoming' ? 'Request received' : person.relationship === 'outgoing' ? 'Request sent' : 'Movie Hunt member'}</p></div>{person.relationship === 'none' && <button disabled={busyId === person.id} onClick={() => void sendRequest(person.id)} className="rounded-lg border border-violet-300/20 px-2.5 py-2 text-[10px] font-semibold text-violet-200 hover:bg-violet-300/10"><UserPlus size={13} /></button>}{person.relationship === 'incoming' && person.friendshipId && <button onClick={() => void requestAction(person.friendshipId!, 'accept')} className="rounded-lg bg-emerald-400/15 px-2.5 py-2 text-[10px] font-semibold text-emerald-200"><Check size={13} /></button>}{person.relationship === 'outgoing' && person.friendshipId && <button onClick={() => void requestAction(person.friendshipId!, 'cancel')} className="rounded-lg border border-white/10 px-2.5 py-2 text-[10px] text-zinc-400"><X size={13} /></button>}</div>)}</div>}
+        {members.length === 0 ? <p className="text-xs text-zinc-500">No matching members. Try another name.</p> : <div className="grid gap-2 sm:grid-cols-2">{members.map((person) => <div key={person.id} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-black/15 p-3"><Avatar name={person.name} image={person.image} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-zinc-100">{person.name}</p><p className="text-[10px] text-zinc-600">{person.relationship === 'friends' ? 'Friend' : person.relationship === 'incoming' ? 'Request received' : person.relationship === 'outgoing' ? 'Request sent' : 'Movie Hunt member'}</p></div>{person.relationship === 'none' && canSendFriendRequests && <button disabled={busyId === person.id} onClick={() => void sendRequest(person.id)} className="rounded-lg border border-violet-300/20 px-2.5 py-2 text-[10px] font-semibold text-violet-200 hover:bg-violet-300/10"><UserPlus size={13} /></button>}{person.relationship === 'incoming' && person.friendshipId && <button onClick={() => void requestAction(person.friendshipId!, 'accept')} className="rounded-lg bg-emerald-400/15 px-2.5 py-2 text-[10px] font-semibold text-emerald-200"><Check size={13} /></button>}{person.relationship === 'outgoing' && person.friendshipId && <button onClick={() => void requestAction(person.friendshipId!, 'cancel')} className="rounded-lg border border-white/10 px-2.5 py-2 text-[10px] text-zinc-400"><X size={13} /></button>}</div>)}</div>}
       </section>
 
       <div className="grid gap-6 xl:grid-cols-2">
@@ -216,11 +240,11 @@ export function SocialFriendsPage() {
       <div className="grid gap-6 xl:grid-cols-2">
         <section className={sectionClass}>
           <h2 className={headingClass}><Activity size={17} className="text-violet-200" /> Friends' activity</h2>
-          {!privacy.shareActivity && activities.length === 0 ? <p className="text-xs leading-5 text-zinc-500">Your friends haven't enabled activity sharing yet. You can enable your own sharing above.</p> : activities.length === 0 ? <p className="text-xs text-zinc-500">No recent activity yet.</p> : <div className="space-y-3">{activities.map((item, index) => <div key={`${item.user.id}-${item.mediaType}-${item.title}-${item.updatedAt}-${index}`} className="flex gap-3 rounded-xl border border-white/[0.06] p-3"><Avatar name={item.user.name} image={item.user.image} /><div className="min-w-0 flex-1"><p className="text-xs text-zinc-300"><strong className="text-zinc-100">{item.user.name}</strong> {item.status === 'watched' || item.status === 'completed' ? 'watched' : item.status === 'watching' ? 'is watching' : item.status === 'dropped' ? 'dropped' : 'added'} <strong className="text-violet-100">{item.title}</strong></p><p className="mt-1 flex items-center gap-2 text-[10px] text-zinc-600">{item.mediaType === 'anime' ? <Tv size={11}/> : <Film size={11}/>} {item.mediaType === 'anime' ? 'Anime' : 'Movie'} · {new Date(item.updatedAt).toLocaleDateString()}</p>{item.rating !== null && <p className="mt-1 text-[10px] text-amber-200">Rated {item.rating}/10</p>}{item.review && <p className="mt-2 line-clamp-3 text-[11px] leading-5 text-zinc-500">“{item.review}”</p>}</div></div>)}</div>}
+          {!privacy.shareActivity && activities.length === 0 ? <p className="text-xs leading-5 text-zinc-500">Your friends haven't enabled activity sharing yet. You can enable your own sharing above.</p> : activities.length === 0 ? <p className="text-xs text-zinc-500">No recent activity yet.</p> : <div className="space-y-3">{activities.map((item, index) => <div key={`${item.user.id}-${item.mediaType}-${item.title}-${item.updatedAt}-${index}`} className="flex gap-3 rounded-xl border border-white/[0.06] p-3"><Avatar name={item.user.name} image={item.user.image} /><div className="min-w-0 flex-1"><p className="text-xs text-zinc-300"><strong className="text-zinc-100">{item.user.name}</strong> {item.status === 'watched' || item.status === 'completed' ? 'watched' : item.status === 'watching' ? 'is watching' : item.status === 'dropped' ? 'dropped' : 'added'} <strong className="text-violet-100">{item.title}</strong></p><p className="mt-1 flex items-center gap-2 text-[10px] text-zinc-600">{item.mediaType === 'anime' ? <Tv size={11} /> : <Film size={11} />} {item.mediaType === 'anime' ? 'Anime' : 'Movie'} · {new Date(item.updatedAt).toLocaleDateString()}</p>{item.rating !== null && <p className="mt-1 text-[10px] text-amber-200">Rated {item.rating}/10</p>}{item.review && <p className="mt-2 line-clamp-3 text-[11px] leading-5 text-zinc-500">“{item.review}”</p>}</div></div>)}</div>}
         </section>
         <section className={sectionClass}>
           <h2 className={headingClass}><Send size={17} className="text-violet-200" /> Recommendations shared with you <span className="ml-auto rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-zinc-400">{shares.filter((share) => !share.readAt).length} new</span></h2>
-          {shares.length === 0 ? <p className="text-xs text-zinc-500">Recommendations shared by your friends will appear here.</p> : <div className="space-y-3">{shares.map((share) => <div key={share.id} className={`rounded-xl border p-3 ${share.readAt ? 'border-white/[0.06]' : 'border-violet-300/20 bg-violet-300/[0.04]'}`}><div className="flex items-center gap-2"><Avatar name={share.senderName} image={share.senderImage}/><p className="min-w-0 flex-1 text-xs text-zinc-300"><strong className="text-zinc-100">{share.senderName}</strong> recommended</p>{!share.readAt && <button onClick={() => void markShareRead(share.id)} className="text-[10px] font-semibold text-violet-200">Mark read</button>}</div><div className="mt-3 flex items-center gap-3"><div className="flex h-16 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white/5">{share.posterUrl ? <img src={share.posterUrl} alt="" className="h-full w-full object-cover"/> : share.mediaType === 'anime' ? <Tv size={18}/> : <Film size={18}/>}</div><div><p className="text-xs font-semibold text-white">{share.title}</p><p className="mt-1 text-[10px] text-zinc-500">{share.mediaType === 'anime' ? 'Anime' : 'Movie'} recommendation</p>{share.message && <p className="mt-2 text-[11px] text-zinc-400">{share.message}</p>}</div></div></div>)}</div>}
+          {shares.length === 0 ? <p className="text-xs text-zinc-500">Recommendations shared by your friends will appear here.</p> : <div className="space-y-3">{shares.map((share) => <div key={share.id} className={`rounded-xl border p-3 ${share.readAt ? 'border-white/[0.06]' : 'border-violet-300/20 bg-violet-300/[0.04]'}`}><div className="flex items-center gap-2"><Avatar name={share.senderName} image={share.senderImage} /><p className="min-w-0 flex-1 text-xs text-zinc-300"><strong className="text-zinc-100">{share.senderName}</strong> recommended</p>{!share.readAt && <button onClick={() => void markShareRead(share.id)} className="text-[10px] font-semibold text-violet-200">Mark read</button>}</div><div className="mt-3 flex items-center gap-3"><div className="flex h-16 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white/5">{share.posterUrl ? <img src={share.posterUrl} alt="" className="h-full w-full object-cover" /> : share.mediaType === 'anime' ? <Tv size={18} /> : <Film size={18} />}</div><div><p className="text-xs font-semibold text-white">{share.title}</p><p className="mt-1 text-[10px] text-zinc-500">{share.mediaType === 'anime' ? 'Anime' : 'Movie'} recommendation</p>{share.message && <p className="mt-2 text-[11px] text-zinc-400">{share.message}</p>}</div></div></div>)}</div>}
         </section>
       </div>
     </div>

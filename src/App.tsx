@@ -141,13 +141,12 @@ function ApiStatus() {
   return (
     <div className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/[0.035] px-3 py-1.5 text-xs text-zinc-400">
       <span
-        className={`h-1.5 w-1.5 rounded-full ${
-          connected === null
-            ? 'animate-pulse bg-amber-400'
-            : connected
-              ? 'bg-emerald-400'
-              : 'bg-zinc-500'
-        }`}
+        className={`h-1.5 w-1.5 rounded-full ${connected === null
+          ? 'animate-pulse bg-amber-400'
+          : connected
+            ? 'bg-emerald-400'
+            : 'bg-zinc-500'
+          }`}
       />
       {label}
     </div>
@@ -232,6 +231,7 @@ function AuthControl() {
   const { data: session, isPending } = authClient.useSession()
   type AccountInfo = {
     role: string
+    isAnonymous: boolean
     approvalStatus: string
     approvalExpiresAt: number | null
   }
@@ -284,6 +284,7 @@ function AuthControl() {
       >
         Sign in with Google
       </Link>
+
     )
   }
 
@@ -299,7 +300,28 @@ function AuthControl() {
           Admin
         </Link>
       )}
-      {isPendingApproval && (
+      {account?.isAnonymous && (
+        <>
+          <span className="rounded-lg border border-violet-400/20 bg-violet-400/5 px-2.5 py-1.5 text-[11px] text-violet-200">
+            Guest mode · 24h
+          </span>
+
+          <button
+            type="button"
+            onClick={() => {
+              void authClient.signIn.social({
+                provider: 'google',
+                callbackURL: '/',
+              })
+            }}
+            className="rounded-lg bg-amber-400 px-3 py-2 text-[11px] font-bold text-zinc-950 hover:bg-amber-300"
+          >
+            Create account
+          </button>
+        </>
+      )}
+
+      {isPendingApproval && !account?.isAnonymous && (
         <span className="hidden rounded-lg border border-amber-400/20 bg-amber-400/5 px-2.5 py-1.5 text-[11px] text-amber-200 md:inline-flex">
           Awaiting approval
         </span>
@@ -319,6 +341,7 @@ function LoginPage() {
   const { data: session, isPending } = authClient.useSession()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const navigate = useNavigate()
 
   async function continueWithGoogle() {
     setBusy(true)
@@ -331,6 +354,31 @@ function LoginPage() {
       if (result.error) setError(result.error.message ?? 'Google sign-in failed.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Google sign-in failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function continueAsGuest() {
+    setBusy(true)
+    setError('')
+
+    try {
+      const result = await authClient.signIn.anonymous()
+
+      if (result.error) {
+        throw new Error(
+          result.error.message ?? 'Could not start guest mode.'
+        )
+      }
+
+      navigate('/')
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Could not start guest mode.'
+      )
     } finally {
       setBusy(false)
     }
@@ -362,6 +410,20 @@ function LoginPage() {
         </svg>
         {busy ? 'Redirecting…' : 'Continue with Google'}
       </button>
+      <button
+        type="button"
+        disabled={busy || isPending}
+        onClick={() => void continueAsGuest()}
+        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:bg-white/[0.08] disabled:opacity-50"
+      >
+        {busy ? 'Starting guest session…' : 'Continue as Guest'}
+      </button>
+
+      <p className="mt-3 text-xs leading-5 text-zinc-600">
+        Explore Movie Hunt without registering. Guest accounts
+        last for 24 hours. You can connect Google later to
+        preserve your collection.
+      </p>
       {error && <p className="mt-4 text-sm text-rose-300">{error}</p>}
       <Link to="/" className="mt-6 text-xs text-zinc-500 hover:text-zinc-300">Back to Movie Hunt</Link>
     </div>
@@ -1490,9 +1552,9 @@ function ProfilePage() {
       setProfile((current) =>
         current
           ? {
-              ...current,
-              user: { ...current.user, name: data.name ?? name },
-            }
+            ...current,
+            user: { ...current.user, name: data.name ?? name },
+          }
           : current
       )
 

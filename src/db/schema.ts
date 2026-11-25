@@ -21,6 +21,7 @@ export const authUser = sqliteTable(
     email: text('email').notNull(),
     emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(false),
     image: text('image'),
+    isAnonymous: integer('is_anonymous', {mode: 'boolean', }).notNull().default(false),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
     updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
     role: text('role').notNull().default('user'),
