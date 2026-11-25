@@ -1372,9 +1372,45 @@ function AiPage() {
   )
 }
 
+
 function FriendsPage() {
+  const { data: session, isPending } = authClient.useSession()
+
+  if (isPending) {
+    return (
+      <div className="flex min-h-[300px] items-center justify-center gap-3 text-sm text-zinc-500">
+        <LoaderCircle className="animate-spin" size={18} />
+        Checking authentication…
+      </div>
+    )
+  }
+
+  if (!session?.user) {
+    return (
+      <div>
+        <PageIntro
+          eyebrow="Your private movie club"
+          title="Friends & community."
+          description="Connect with approved Movie Hunt members and share your favourite movies and anime."
+        />
+
+        <EmptyState
+          icon={Users}
+          title="Sign in to access your community"
+          description="Your friends, incoming requests, shared recommendations and activity feed are available after signing in."
+          action={
+            <LinkButton to="/login">
+              Sign in with Google
+            </LinkButton>
+          }
+        />
+      </div>
+    )
+  }
+
   return <SocialFriendsPage />
 }
+
 
 function ProfilePage() {
   const { data: session, isPending } = authClient.useSession()
