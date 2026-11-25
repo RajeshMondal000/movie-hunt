@@ -297,3 +297,18 @@ export const sharedRecommendations = sqliteTable(
     index('shared_recommendations_sender_idx').on(table.senderId),
   ],
 )
+
+export const rateLimitCounters = sqliteTable(
+  'rate_limit_counters',
+  {
+    bucketKey: text('bucket_key').notNull(),
+    windowKey: text('window_key').notNull(),
+    count: integer('count').notNull().default(0),
+    expiresAt: integer('expires_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.bucketKey, table.windowKey] }),
+    index('rate_limit_counters_expires_at_idx').on(table.expiresAt),
+  ],
+)

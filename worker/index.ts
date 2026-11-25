@@ -4,7 +4,16 @@ import { Hono, type Context } from 'hono'
 import * as schema from '../src/db/schema.js'
 import { createAuth, type AuthBindings } from './auth.js'
 
-type AppBindings = Env & AuthBindings & {
+import {
+  consumeAiSubmissionQuota,
+  consumeGeminiAttemptQuota,
+  enforceAuthRateLimits,
+  enforceRequestRateLimits,
+  getDailyQuotaRetryAfterSeconds,
+  type RateLimitBindings,
+} from './rate-limit.js'
+
+type AppBindings = Env & AuthBindings & RateLimitBindings & {
   TMDB_ACCESS_TOKEN?: string
   GEMINI_API_KEY?: string
   GEMINI_MODEL?: string
@@ -500,23 +509,49 @@ function authFor(c: AppContext) {
   return createAuth(c.env, new URL(c.req.url).origin)
 }
 
-async function getSessionMember(c: AppContext) {
-  const auth = authFor(c)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
-  if (!session) return null
+type SessionLookupResult = {
+  member: MemberRecord
+  expired: boolean
+} | null
 
-  const member = session.user as unknown as MemberRecord
-  const expiredPending =
-    member.approvalStatus === 'pending' &&
-    Number(member.approvalExpiresAt ?? 0) <= Date.now()
-  const rejected = member.approvalStatus === 'rejected'
+const sessionLookupCache =
+  new WeakMap<AppContext, Promise<SessionLookupResult>>()
 
-  if (expiredPending || rejected) {
-    await deleteMember(c.env, member.id)
-    return { member, expired: true }
-  }
+async function getSessionMember(
+  c: AppContext,
+): Promise<SessionLookupResult> {
+  const cached = sessionLookupCache.get(c)
 
-  return { member, expired: false }
+  if (cached) return cached
+
+  const lookup = (async (): Promise<SessionLookupResult> => {
+    const auth = authFor(c)
+
+    const session = await auth.api.getSession({
+      headers: c.req.raw.headers,
+    })
+
+    if (!session) return null
+
+    const member = session.user as unknown as MemberRecord
+
+    const expiredPending =
+      member.approvalStatus === 'pending' &&
+      Number(member.approvalExpiresAt ?? 0) <= Date.now()
+
+    const rejected = member.approvalStatus === 'rejected'
+
+    if (expiredPending || rejected) {
+      await deleteMember(c.env, member.id)
+      return { member, expired: true }
+    }
+
+    return { member, expired: false }
+  })()
+
+  sessionLookupCache.set(c, lookup)
+
+  return lookup
 }
 
 async function deleteMember(env: AppBindings, userId: string) {
@@ -532,6 +567,48 @@ async function deleteMember(env: AppBindings, userId: string) {
   await db.delete(schema.authAccount).where(eq(schema.authAccount.userId, userId))
   await db.delete(schema.authUser).where(eq(schema.authUser.id, userId))
 }
+
+
+app.use('/api/*', async (c, next) => {
+  const path = new URL(c.req.url).pathname
+
+  if (path === '/api/health' || path === '/api') {
+    return next()
+  }
+
+  // Authentication and guest creation: IP-based protection.
+  if (path.startsWith('/api/auth/')) {
+    const response = await enforceAuthRateLimits(
+      c.req.raw,
+      c.env,
+    )
+
+    if (response) return response
+
+    return next()
+  }
+
+  // Identify the current user.
+  const result = await getSessionMember(c)
+
+  const member =
+    result && !result.expired
+      ? result.member
+      : null
+
+  // Apply general, category-specific and applicable
+  // daily D1 quotas.
+  const response = await enforceRequestRateLimits(
+    c.req.raw,
+    c.env,
+    member,
+  )
+
+  if (response) return response
+
+  return next()
+})
+
 
 app.get('/api', (c) =>
   c.json({ name: 'Movie Hunt API', version: '0.2.0', status: 'running' }),
@@ -1208,7 +1285,7 @@ type RankedCandidate = {
 
 type GeminiResult = {
   recommendations: Map<number, string> | null
-  status: 'used' | 'missing_key' | 'http_error' | 'invalid_response' | 'network_error' | 'blocked_response' | 'truncated_response'
+  status: 'used' | 'missing_key' | 'http_error' | 'invalid_response' | 'network_error' | 'blocked_response' | 'truncated_response' | 'quota_exceeded'
   httpStatus?: number
   attempts?: number
   diagnostic?: string
@@ -1548,8 +1625,18 @@ async function getGeminiRecommendationReasons(
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
 
   for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt += 1) {
-    let response: Response
+    const quota = await consumeGeminiAttemptQuota(env)
 
+    if (!quota.allowed) {
+      return {
+        recommendations: null,
+        status: 'quota_exceeded',
+        attempts: attempt - 1,
+        diagnostic: quota.reason ?? 'gemini_quota_exceeded',
+      }
+    }
+
+    let response: Response
     try {
       response = await fetch(endpoint, {
         method: 'POST',
@@ -1726,6 +1813,30 @@ app.post('/api/recommendations', async (c) => {
     const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : ''
     if (prompt.length > 240) {
       return c.json({ error: 'prompt_too_long', message: 'Keep your request under 240 characters.' }, 400)
+    }
+    const submissionQuota = await consumeAiSubmissionQuota(
+      c.env,
+      member,
+    )
+
+    if (!submissionQuota.allowed) {
+      const unavailable =
+        submissionQuota.reason === 'quota_store_unavailable'
+
+      return c.json({
+        error: unavailable
+          ? 'quota_store_unavailable'
+          : 'daily_ai_limit_exceeded',
+
+        message: unavailable
+          ? 'AI usage limits could not be checked. Please try again shortly.'
+          : 'You have reached your daily AI recommendation limit.',
+      }, unavailable ? 503 : 429, {
+        'Retry-After': unavailable
+          ? '60'
+          : String(getDailyQuotaRetryAfterSeconds()),
+        'Cache-Control': 'no-store',
+      })
     }
 
     const promptGenreIds = inferPromptGenreIds(prompt)
@@ -2638,7 +2749,7 @@ async function getGeminiAnimeReasons(
 ): Promise<{ reasons: Map<string, string> | null; status: string; diagnostic?: string }> {
   const apiKey = env.GEMINI_API_KEY?.trim()
   if (!apiKey) return { reasons: null, status: 'missing_key', diagnostic: 'missing_key' }
-  const model = (env.GEMINI_MODEL?.trim() || 'gemini-3.6-flash').replace(/[^a-zA-Z0-9._-]/g, '')
+  const model = (env.GEMINI_MODEL?.trim() || 'gemini-3.5-flash-lite').replace(/[^a-zA-Z0-9._-]/g, '')
   const allowed = new Map(candidates.map(({ anime }) => [anime.id, anime]))
   const userPrompt = [
     'You are the anime recommendation explanation layer for Movie Hunt.',
@@ -2686,9 +2797,21 @@ async function getGeminiAnimeReasons(
     },
   })
 
+
   for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt += 1) {
     let response: Response
     try {
+
+      const quota = await consumeGeminiAttemptQuota(env)
+
+      if (!quota.allowed) {
+        return {
+          reasons: null,
+          status: 'quota_exceeded',
+          diagnostic: quota.reason ?? 'gemini_quota_exceeded',
+        }
+      }
+
       response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
@@ -2749,6 +2872,31 @@ app.post('/api/anime/recommendations', async (c) => {
     const body = await c.req.json().catch(() => null) as { prompt?: unknown } | null
     const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : ''
     if (prompt.length > 240) return c.json({ error: 'prompt_too_long', message: 'Keep your anime request under 240 characters.' }, 400)
+
+    const submissionQuota = await consumeAiSubmissionQuota(
+      c.env,
+      member,
+    )
+
+    if (!submissionQuota.allowed) {
+      const unavailable =
+        submissionQuota.reason === 'quota_store_unavailable'
+
+      return c.json({
+        error: unavailable
+          ? 'quota_store_unavailable'
+          : 'daily_ai_limit_exceeded',
+
+        message: unavailable
+          ? 'AI usage limits could not be checked. Please try again shortly.'
+          : 'You have reached your daily AI recommendation limit.',
+      }, unavailable ? 503 : 429, {
+        'Retry-After': unavailable
+          ? '60'
+          : String(getDailyQuotaRetryAfterSeconds()),
+        'Cache-Control': 'no-store',
+      })
+    }
 
     const db = getDb(c.env)
     const [trackedRows, reviewRows] = await Promise.all([

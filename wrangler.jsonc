@@ -41,5 +41,40 @@
       "database_id": "d6da642b-c4a4-4957-9b45-deb405d78fd5",
       "migrations_dir": "migrations"
     }
-  ]
+  ],
+
+  // namespace_id must be a positive integer string unique within your Cloudflare account.
+// If any ID is already used by another Worker, change it to a different unused integer.
+"ratelimits": [
+  { "name": "RL_GENERAL_PUBLIC", "namespace_id": "92611001", "simple": { "limit": 30, "period": 60 } },
+  { "name": "RL_GENERAL_GUEST", "namespace_id": "92611002", "simple": { "limit": 60, "period": 60 } },
+  { "name": "RL_GENERAL_MEMBER", "namespace_id": "92611003", "simple": { "limit": 180, "period": 60 } },
+  { "name": "RL_GENERAL_ADMIN", "namespace_id": "92611004", "simple": { "limit": 600, "period": 60 } },
+
+  { "name": "RL_DISCOVERY_GUEST", "namespace_id": "92611021", "simple": { "limit": 20, "period": 60 } },
+  { "name": "RL_DISCOVERY_MEMBER", "namespace_id": "92611022", "simple": { "limit": 60, "period": 60 } },
+  { "name": "RL_DISCOVERY_ADMIN", "namespace_id": "92611023", "simple": { "limit": 180, "period": 60 } },
+
+  { "name": "RL_SEARCH_GUEST", "namespace_id": "92611005", "simple": { "limit": 8, "period": 60 } },
+  { "name": "RL_SEARCH_MEMBER", "namespace_id": "92611006", "simple": { "limit": 24, "period": 60 } },
+  { "name": "RL_SEARCH_ADMIN", "namespace_id": "92611007", "simple": { "limit": 60, "period": 60 } },
+
+  { "name": "RL_WRITE_GUEST", "namespace_id": "92611008", "simple": { "limit": 10, "period": 60 } },
+  { "name": "RL_WRITE_MEMBER", "namespace_id": "92611009", "simple": { "limit": 30, "period": 60 } },
+  { "name": "RL_WRITE_ADMIN", "namespace_id": "92611010", "simple": { "limit": 120, "period": 60 } },
+
+  { "name": "RL_AI_GUEST", "namespace_id": "92611011", "simple": { "limit": 1, "period": 60 } },
+  { "name": "RL_AI_MEMBER", "namespace_id": "92611012", "simple": { "limit": 3, "period": 60 } },
+  { "name": "RL_AI_ADMIN", "namespace_id": "92611013", "simple": { "limit": 10, "period": 60 } },
+
+  { "name": "RL_SOCIAL_MEMBER", "namespace_id": "92611014", "simple": { "limit": 30, "period": 60 } },
+  { "name": "RL_SOCIAL_ADMIN", "namespace_id": "92611015", "simple": { "limit": 120, "period": 60 } },
+
+  { "name": "RL_PROFILE_MEMBER", "namespace_id": "92611016", "simple": { "limit": 5, "period": 60 } },
+  { "name": "RL_PROFILE_ADMIN", "namespace_id": "92611017", "simple": { "limit": 30, "period": 60 } },
+  { "name": "RL_ADMIN_ACTION", "namespace_id": "92611018", "simple": { "limit": 30, "period": 60 } },
+
+  { "name": "RL_AUTH_IP", "namespace_id": "92611019", "simple": { "limit": 5, "period": 60 } },
+  { "name": "RL_GUEST_CREATE_IP", "namespace_id": "92611020", "simple": { "limit": 2, "period": 60 } }
+]
 }
