@@ -603,6 +603,349 @@ app.get('/api/me', async (c) => {
   }
 })
 
+
+// ============================================================
+// MEMBER PROFILE
+// ============================================================
+
+app.get('/api/profile', async (c) => {
+  try {
+    const member = await requireActiveMember(c)
+    if (member instanceof Response) return member
+
+    const db = c.env.movie_hunt_db
+    const userId = member.id
+
+    type Counts = {
+      tracked: number
+      wantToWatch: number
+      watching: number
+      watched: number
+      dropped: number
+    }
+
+    type RatingStats = {
+      reviewed: number
+      averageRating: number
+    }
+
+    type RecentRow = {
+      mediaId: string | number
+      title: string
+      poster: string | null
+      status: string
+      updatedAt: number
+      rating: number | null
+    }
+
+    const [
+      account,
+      movieCounts,
+      movieRatings,
+      animeCounts,
+      animeRatings,
+      friendshipCount,
+      privacy,
+      movieRows,
+      animeRows,
+      movieGenres,
+      animeGenres,
+    ] = await Promise.all([
+      db.prepare(`
+        SELECT
+          id, name, email, image, role,
+          approval_status AS approvalStatus,
+          created_at AS createdAt,
+          approved_at AS approvedAt
+        FROM user
+        WHERE id = ?
+      `).bind(userId).first<{
+        id: string
+        name: string
+        email: string
+        image: string | null
+        role: string
+        approvalStatus: string
+        createdAt: number
+        approvedAt: number | null
+      }>(),
+
+      db.prepare(`
+        SELECT
+          COUNT(*) AS tracked,
+          SUM(CASE WHEN status = 'want_to_watch' THEN 1 ELSE 0 END) AS wantToWatch,
+          SUM(CASE WHEN status = 'watching' THEN 1 ELSE 0 END) AS watching,
+          SUM(CASE WHEN status = 'watched' THEN 1 ELSE 0 END) AS watched,
+          SUM(CASE WHEN status = 'dropped' THEN 1 ELSE 0 END) AS dropped
+        FROM watchlist_items
+        WHERE user_id = ?
+      `).bind(userId).first<Counts>(),
+
+      db.prepare(`
+        SELECT
+          COUNT(*) AS reviewed,
+          COALESCE(AVG(rating), 0) AS averageRating
+        FROM user_reviews
+        WHERE user_id = ?
+      `).bind(userId).first<RatingStats>(),
+
+      db.prepare(`
+        SELECT
+          COUNT(*) AS tracked,
+          SUM(CASE WHEN status = 'want_to_watch' THEN 1 ELSE 0 END) AS wantToWatch,
+          SUM(CASE WHEN status = 'watching' THEN 1 ELSE 0 END) AS watching,
+          SUM(CASE WHEN status = 'watched' THEN 1 ELSE 0 END) AS watched,
+          SUM(CASE WHEN status = 'dropped' THEN 1 ELSE 0 END) AS dropped
+        FROM anime_watchlist_items
+        WHERE user_id = ?
+      `).bind(userId).first<Counts>(),
+
+      db.prepare(`
+        SELECT
+          COUNT(*) AS reviewed,
+          COALESCE(AVG(rating), 0) AS averageRating
+        FROM anime_reviews
+        WHERE user_id = ?
+      `).bind(userId).first<RatingStats>(),
+
+      db.prepare(`
+        SELECT COUNT(*) AS total
+        FROM friendships
+        WHERE status = 'accepted'
+          AND (user_a_id = ? OR user_b_id = ?)
+      `).bind(userId, userId).first<{ total: number }>(),
+
+      db.prepare(`
+        SELECT
+          share_activity AS shareActivity,
+          allow_friend_requests AS allowFriendRequests
+        FROM social_privacy
+        WHERE user_id = ?
+      `).bind(userId).first<{
+        shareActivity: number
+        allowFriendRequests: number
+      }>(),
+
+      db.prepare(`
+        SELECT
+          m.tmdb_id AS mediaId,
+          m.title,
+          m.poster_path AS poster,
+          w.status,
+          w.updated_at AS updatedAt,
+          r.rating
+        FROM watchlist_items w
+        JOIN movies m ON m.id = w.movie_id
+        LEFT JOIN user_reviews r
+          ON r.user_id = w.user_id
+          AND r.movie_id = w.movie_id
+        WHERE w.user_id = ?
+        ORDER BY w.updated_at DESC
+        LIMIT 8
+      `).bind(userId).all<RecentRow>(),
+
+      db.prepare(`
+        SELECT
+          a.kitsu_id AS mediaId,
+          a.title,
+          a.poster_url AS poster,
+          w.status,
+          w.updated_at AS updatedAt,
+          r.rating
+        FROM anime_watchlist_items w
+        JOIN anime_catalog a ON a.kitsu_id = w.anime_id
+        LEFT JOIN anime_reviews r
+          ON r.user_id = w.user_id
+          AND r.anime_id = w.anime_id
+        WHERE w.user_id = ?
+        ORDER BY w.updated_at DESC
+        LIMIT 8
+      `).bind(userId).all<RecentRow>(),
+
+      db.prepare(`
+        SELECT
+          g.name,
+          ROUND(AVG(r.rating), 1) AS averageRating,
+          COUNT(*) AS reviewCount
+        FROM user_reviews r
+        JOIN movies m ON m.id = r.movie_id
+        JOIN movie_genres mg ON mg.movie_id = m.id
+        JOIN genres g ON g.tmdb_id = mg.genre_id
+        WHERE r.user_id = ?
+        GROUP BY g.tmdb_id, g.name
+        ORDER BY averageRating DESC
+        LIMIT 8
+      `).bind(userId).all<{
+        name: string
+        averageRating: number
+        reviewCount: number
+      }>(),
+
+      db.prepare(`
+        SELECT
+          a.genres_json AS genresJson,
+          r.rating
+        FROM anime_reviews r
+        JOIN anime_catalog a ON a.kitsu_id = r.anime_id
+        WHERE r.user_id = ?
+      `).bind(userId).all<{
+        genresJson: string
+        rating: number
+      }>(),
+    ])
+
+    if (!account) {
+      return c.json({ error: 'profile_not_found' }, 404)
+    }
+
+    // Derive favourite anime genres from the member's own ratings.
+    const genreWeights = new Map<
+      string,
+      { total: number; count: number }
+    >()
+
+    for (const row of animeGenres.results ?? []) {
+      let genres: unknown
+
+      try {
+        genres = JSON.parse(row.genresJson || '[]')
+      } catch {
+        continue
+      }
+
+      if (!Array.isArray(genres)) continue
+
+      for (const genre of genres) {
+        if (typeof genre !== 'string' || !genre.trim()) continue
+
+        const current = genreWeights.get(genre) ?? {
+          total: 0,
+          count: 0,
+        }
+
+        current.total += Number(row.rating) || 0
+        current.count += 1
+
+        genreWeights.set(genre, current)
+      }
+    }
+
+    const favoriteAnimeGenres = [...genreWeights.entries()]
+      .map(([name, value]) => ({
+        name,
+        averageRating: Number(
+          (value.total / value.count).toFixed(1)
+        ),
+        reviewCount: value.count,
+      }))
+      .sort((a, b) => b.averageRating - a.averageRating)
+      .slice(0, 8)
+
+    const recentActivity = [
+      ...(movieRows.results ?? []).map((row) => ({
+        ...row,
+        mediaType: 'movie' as const,
+      })),
+      ...(animeRows.results ?? []).map((row) => ({
+        ...row,
+        mediaType: 'anime' as const,
+      })),
+    ]
+      .sort(
+        (a, b) => Number(b.updatedAt) - Number(a.updatedAt)
+      )
+      .slice(0, 8)
+
+    return c.json({
+      user: account,
+
+      stats: {
+        friends: Number(friendshipCount?.total ?? 0),
+
+        movies: {
+          tracked: Number(movieCounts?.tracked ?? 0),
+          wantToWatch: Number(movieCounts?.wantToWatch ?? 0),
+          watching: Number(movieCounts?.watching ?? 0),
+          watched: Number(movieCounts?.watched ?? 0),
+          dropped: Number(movieCounts?.dropped ?? 0),
+          reviewed: Number(movieRatings?.reviewed ?? 0),
+          averageRating: Number(
+            Number(movieRatings?.averageRating ?? 0).toFixed(1)
+          ),
+        },
+
+        anime: {
+          tracked: Number(animeCounts?.tracked ?? 0),
+          wantToWatch: Number(animeCounts?.wantToWatch ?? 0),
+          watching: Number(animeCounts?.watching ?? 0),
+          watched: Number(animeCounts?.watched ?? 0),
+          dropped: Number(animeCounts?.dropped ?? 0),
+          reviewed: Number(animeRatings?.reviewed ?? 0),
+          averageRating: Number(
+            Number(animeRatings?.averageRating ?? 0).toFixed(1)
+          ),
+        },
+      },
+
+      favoriteGenres: {
+        movies: movieGenres.results ?? [],
+        anime: favoriteAnimeGenres,
+      },
+
+      recentActivity,
+
+      privacy: {
+        shareActivity: Boolean(privacy?.shareActivity ?? false),
+        allowFriendRequests: Boolean(
+          privacy?.allowFriendRequests ?? true
+        ),
+      },
+    })
+  } catch (error) {
+    console.error('Could not load member profile:', error)
+    return c.json({ error: 'could_not_load_profile' }, 500)
+  }
+})
+
+
+// Update display name. Email and account permissions remain server-managed.
+app.patch('/api/profile', async (c) => {
+  try {
+    const member = await requireActiveMember(c)
+    if (member instanceof Response) return member
+
+    const body = await c.req.json().catch(() => null) as {
+      name?: unknown
+    } | null
+
+    if (typeof body?.name !== 'string') {
+      return c.json({ error: 'invalid_profile_name' }, 400)
+    }
+
+    const name = body.name
+      .replace(/[\u0000-\u001F\u007F]/g, '')
+      .trim()
+      .replace(/\s+/g, ' ')
+
+    if (name.length < 2 || name.length > 40) {
+      return c.json({
+        error: 'invalid_profile_name',
+        message: 'Name must be between 2 and 40 characters.',
+      }, 400)
+    }
+
+    await c.env.movie_hunt_db.prepare(`
+      UPDATE user SET name = ? WHERE id = ?
+    `).bind(name, member.id).run()
+
+    return c.json({ name })
+  } catch (error) {
+    console.error('Could not update profile:', error)
+    return c.json({ error: 'could_not_update_profile' }, 500)
+  }
+})
+
+
 app.get('/api/admin/pending-users', async (c) => {
   try {
     const result = await getSessionMember(c)

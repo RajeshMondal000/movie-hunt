@@ -92,8 +92,6 @@ npm run build
 npm run dev
 ```
 
-Open <http://localhost:5173/>. Local D1 state is stored under `.wrangler/`; keep that directory out of Git. Never commit `.dev.vars`.
-
 ## Deployment
 
 Movie Hunt is deployed at <https://movie-hunt.rjmn.workers.dev/>. The Worker, asset routing, D1 binding, and 15-minute account-cleanup Cron Trigger are configured in `wrangler.jsonc`.
@@ -109,7 +107,3 @@ For the full Cloudflare deployment and GitHub push workflow, see [docs/DEPLOYMEN
 ## Data-provider attribution
 
 Movie metadata is provided by **The Movie Database (TMDB)**. Anime metadata is provided by **Kitsu**. Their names, logos, and data remain subject to their respective terms and attribution requirements. Movie Hunt is an independent project and is not endorsed by TMDB or Kitsu.
-
-## Project status
-
-Movie Hunt is deployed and its core features have been manually verified in production. This is a student portfolio project; UI and functionality improvements are ongoing.

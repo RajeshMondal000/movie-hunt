@@ -40,6 +40,54 @@ import { tmdbImage, useTmdbData, type TmdbGenre, type TmdbMovie, type TmdbMovieD
 import { AnimeAiPage, AnimeDetailsPage, AnimeDiscoverPage, AnimeHomePage, AnimeWatchlistPage } from './components/AnimeExperience'
 import { SocialFriendsPage } from './components/SocialExperience'
 
+
+type ProfileStats = {
+  tracked: number
+  wantToWatch: number
+  watching: number
+  watched: number
+  dropped: number
+  reviewed: number
+  averageRating: number
+}
+
+type ProfileActivity = {
+  mediaId: string | number
+  mediaType: 'movie' | 'anime'
+  title: string
+  poster: string | null
+  status: string
+  updatedAt: number
+  rating: number | null
+}
+
+type ProfileData = {
+  user: {
+    id: string
+    name: string
+    email: string
+    image: string | null
+    role: string
+    approvalStatus: string
+    createdAt: number
+    approvedAt: number | null
+  }
+  stats: {
+    friends: number
+    movies: ProfileStats
+    anime: ProfileStats
+  }
+  favoriteGenres: {
+    movies: { name: string; averageRating: number; reviewCount: number }[]
+    anime: { name: string; averageRating: number; reviewCount: number }[]
+  }
+  recentActivity: ProfileActivity[]
+  privacy: {
+    shareActivity: boolean
+    allowFriendRequests: boolean
+  }
+}
+
 type NavItem = {
   label: string
   to: string
@@ -1329,21 +1377,559 @@ function FriendsPage() {
 }
 
 function ProfilePage() {
+  const { data: session, isPending } = authClient.useSession()
+  const userId = session?.user?.id
+
+  const [profile, setProfile] = useState<ProfileData | null>(null)
+  const [name, setName] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [savingName, setSavingName] = useState(false)
+  const [savingPrivacy, setSavingPrivacy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    if (!userId) return
+
+    let active = true
+
+    fetch('/api/profile')
+      .then(async (response) => {
+        const data = await response.json() as ProfileData & {
+          error?: string
+        }
+
+        if (!response.ok) {
+          throw new Error(data.error ?? 'Could not load profile.')
+        }
+
+        return data
+      })
+      .then((data) => {
+        if (!active) return
+        setProfile(data)
+        setName(data.user.name)
+      })
+      .catch((err) => {
+        if (active) {
+          setError(
+            err instanceof Error ? err.message : 'Could not load profile.'
+          )
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [userId])
+
+  async function saveName(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+    setSavingName(true)
+
+    try {
+      const response = await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+
+      const data = await response.json() as {
+        name?: string
+        message?: string
+        error?: string
+      }
+
+      if (!response.ok) {
+        throw new Error(data.message ?? data.error ?? 'Could not update name.')
+      }
+
+      setName(data.name ?? name)
+
+      setProfile((current) =>
+        current
+          ? {
+              ...current,
+              user: { ...current.user, name: data.name ?? name },
+            }
+          : current
+      )
+
+      setNotice('Your profile name has been updated.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update name.')
+    } finally {
+      setSavingName(false)
+    }
+  }
+
+  async function updatePrivacy(
+    changes: Partial<ProfileData['privacy']>
+  ) {
+    if (!profile) return
+
+    const nextPrivacy = {
+      ...profile.privacy,
+      ...changes,
+    }
+
+    setSavingPrivacy(true)
+    setError('')
+    setNotice('')
+
+    try {
+      const response = await fetch('/api/social/privacy', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nextPrivacy),
+      })
+
+      const data = await response.json() as {
+        error?: string
+        privacy?: ProfileData['privacy']
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error ?? 'Could not save privacy settings.')
+      }
+
+      setProfile((current) =>
+        current
+          ? { ...current, privacy: data.privacy ?? nextPrivacy }
+          : current
+      )
+
+      setNotice('Privacy settings saved.')
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Could not update privacy.'
+      )
+    } finally {
+      setSavingPrivacy(false)
+    }
+  }
+
+  if (isPending) {
+    return <p className="text-sm text-zinc-500">Checking account…</p>
+  }
+
+  if (!session?.user) {
+    return (
+      <EmptyState
+        icon={UserRound}
+        title="Sign in to view your profile"
+        description="Your movie collection, anime history and personal statistics live here."
+        action={<LinkButton to="/login">Sign in</LinkButton>}
+      />
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[300px] items-center justify-center gap-3 text-sm text-zinc-500">
+        <LoaderCircle className="animate-spin" size={18} />
+        Loading your profile…
+      </div>
+    )
+  }
+
+  if (!profile) {
+    return (
+      <EmptyState
+        icon={UserRound}
+        title="Couldn't load your profile"
+        description={error || 'Please try refreshing the page.'}
+      />
+    )
+  }
+
+  const stats = [
+    {
+      label: 'Movies watched',
+      value: profile.stats.movies.watched,
+      icon: Film,
+    },
+    {
+      label: 'Anime completed',
+      value: profile.stats.anime.watched,
+      icon: Heart,
+    },
+    {
+      label: 'Total reviews',
+      value:
+        profile.stats.movies.reviewed +
+        profile.stats.anime.reviewed,
+      icon: Star,
+    },
+    {
+      label: 'Friends',
+      value: profile.stats.friends,
+      icon: Users,
+    },
+  ]
+
+  const genres = [
+    ...profile.favoriteGenres.movies.map((genre) => ({
+      ...genre,
+      mediaType: 'Movie',
+    })),
+    ...profile.favoriteGenres.anime.map((genre) => ({
+      ...genre,
+      mediaType: 'Anime',
+    })),
+  ]
+
   return (
-    <div>
+    <div className="space-y-8">
       <PageIntro
         eyebrow="Your account"
         title="Your movie identity."
-        description="Your profile will bring together your favourite genres, ratings, lists and viewing history."
+        description="Your personal collection, movie history, anime journey and community profile."
       />
-      <EmptyState
-        icon={UserRound}
-        title="Your profile will live here"
-        description="Sign-in and profile management will be connected in the next phase."
-      />
+
+      {error && (
+        <div className="rounded-xl border border-rose-400/20 bg-rose-400/5 p-3 text-sm text-rose-300">
+          {error}
+        </div>
+      )}
+
+      {notice && (
+        <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 text-sm text-emerald-300">
+          {notice}
+        </div>
+      )}
+
+      {/* Account header */}
+      <section className="rounded-2xl border border-white/[0.08] bg-gradient-to-br from-amber-400/[0.08] to-transparent p-6 sm:p-8">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+          {profile.user.image ? (
+            <img
+              src={profile.user.image}
+              alt={profile.user.name}
+              className="h-20 w-20 rounded-2xl border border-white/10 object-cover"
+            />
+          ) : (
+            <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-white/10 text-3xl font-semibold text-white">
+              {profile.user.name.charAt(0).toUpperCase()}
+            </div>
+          )}
+
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-2xl font-semibold text-white">
+                {profile.user.name}
+              </h2>
+
+              <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase text-emerald-300">
+                {profile.user.approvalStatus}
+              </span>
+
+              {profile.user.role === 'admin' && (
+                <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase text-amber-300">
+                  Administrator
+                </span>
+              )}
+            </div>
+
+            <p className="mt-1 text-sm text-zinc-400">
+              {profile.user.email}
+            </p>
+
+            <p className="mt-3 flex items-center gap-2 text-xs text-zinc-500">
+              <CalendarDays size={14} />
+              Member since{' '}
+              {new Date(profile.user.createdAt).toLocaleDateString()}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Statistics */}
+      <section>
+        <SectionTitle eyebrow="Your collection" title="Your statistics" />
+
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {stats.map((item) => {
+            const Icon = item.icon
+
+            return (
+              <div
+                key={item.label}
+                className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4"
+              >
+                <Icon size={19} className="text-amber-300" />
+                <p className="mt-4 text-2xl font-semibold text-white">
+                  {item.value}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {item.label}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* Movie and anime statistics */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        {[
+          {
+            title: 'Movie collection',
+            stats: profile.stats.movies,
+            color: 'text-amber-300',
+          },
+          {
+            title: 'Anime collection',
+            stats: profile.stats.anime,
+            color: 'text-violet-300',
+          },
+        ].map((collection) => (
+          <div
+            key={collection.title}
+            className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5"
+          >
+            <h3 className="font-semibold text-white">
+              {collection.title}
+            </h3>
+
+            <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <div>
+                <p className="text-xl font-semibold text-white">
+                  {collection.stats.tracked}
+                </p>
+                <p className="text-xs text-zinc-500">Tracked</p>
+              </div>
+
+              <div>
+                <p className="text-xl font-semibold text-white">
+                  {collection.stats.watching}
+                </p>
+                <p className="text-xs text-zinc-500">Watching</p>
+              </div>
+
+              <div>
+                <p className="text-xl font-semibold text-white">
+                  {collection.stats.watched}
+                </p>
+                <p className="text-xs text-zinc-500">Completed</p>
+              </div>
+
+              <div>
+                <p className="text-xl font-semibold text-white">
+                  {collection.stats.reviewed}
+                </p>
+                <p className="text-xs text-zinc-500">Reviews</p>
+              </div>
+
+              <div>
+                <p className={`text-xl font-semibold ${collection.color}`}>
+                  {collection.stats.averageRating.toFixed(1)}/10
+                </p>
+                <p className="text-xs text-zinc-500">Average rating</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </section>
+
+      {/* Favourite genres */}
+      <section>
+        <SectionTitle
+          eyebrow="Your taste"
+          title="Favourite genres"
+        />
+
+        {genres.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-white/10 p-5 text-sm text-zinc-500">
+            Rate some movies and anime to discover your favourite genres.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {genres.map((genre, index) => (
+              <div
+                key={`${genre.mediaType}-${genre.name}-${index}`}
+                className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2"
+              >
+                <span className="text-sm font-medium text-zinc-200">
+                  {genre.name}
+                </span>
+                <span className="ml-2 text-[10px] text-zinc-500">
+                  {genre.mediaType} · {genre.averageRating}/10
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Recent activity */}
+      <section>
+        <SectionTitle eyebrow="Recently updated" title="Your activity" />
+
+        {profile.recentActivity.length === 0 ? (
+          <EmptyState
+            icon={Clock3}
+            title="Your journey starts here"
+            description="Add movies or anime to your watchlist to see your activity here."
+            action={<LinkButton to="/discover">Discover movies</LinkButton>}
+          />
+        ) : (
+          <div className="space-y-3">
+            {profile.recentActivity.map((item) => {
+              const poster =
+                item.mediaType === 'movie'
+                  ? tmdbImage(item.poster, 'w92')
+                  : item.poster
+
+              const destination =
+                item.mediaType === 'movie'
+                  ? `/movie/${item.mediaId}`
+                  : `/anime/${item.mediaId}`
+
+              return (
+                <Link
+                  key={`${item.mediaType}-${item.mediaId}`}
+                  to={destination}
+                  className="flex items-center gap-4 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 transition hover:bg-white/[0.05]"
+                >
+                  {poster ? (
+                    <img
+                      src={poster}
+                      alt=""
+                      className="h-16 w-11 rounded-md object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-11 items-center justify-center rounded-md bg-white/5">
+                      <Film size={17} className="text-zinc-500" />
+                    </div>
+                  )}
+
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-white">
+                      {item.title}
+                    </p>
+                    <p className="mt-1 text-xs capitalize text-zinc-500">
+                      {item.mediaType} · {item.status.replace(/_/g, ' ')}
+                    </p>
+                    <p className="mt-1 text-[10px] text-zinc-600">
+                      {new Date(item.updatedAt).toLocaleDateString()}
+                    </p>
+                  </div>
+
+                  {item.rating !== null && (
+                    <span className="flex items-center gap-1 text-xs font-semibold text-amber-300">
+                      <Star size={13} fill="currentColor" />
+                      {item.rating}/10
+                    </span>
+                  )}
+                </Link>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Edit profile */}
+      <section className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5 sm:p-6">
+        <SectionTitle eyebrow="Account settings" title="Edit profile" />
+
+        <form onSubmit={(event) => void saveName(event)} className="max-w-lg">
+          <label className="mb-2 block text-xs font-medium text-zinc-400">
+            Display name
+          </label>
+
+          <input
+            type="text"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            minLength={2}
+            maxLength={40}
+            required
+            className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition focus:border-amber-400/50"
+          />
+
+          <button
+            type="submit"
+            disabled={savingName || name.trim().length < 2}
+            className="mt-4 rounded-xl bg-amber-400 px-4 py-2.5 text-xs font-bold text-zinc-950 transition hover:bg-amber-300 disabled:opacity-50"
+          >
+            {savingName ? 'Saving…' : 'Save profile'}
+          </button>
+        </form>
+
+        <p className="mt-3 text-xs text-zinc-600">
+          Your Google email and account permissions cannot be changed here.
+        </p>
+      </section>
+
+      {/* Privacy settings */}
+      <section className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5 sm:p-6">
+        <SectionTitle eyebrow="Community" title="Privacy settings" />
+
+        <div className="space-y-5">
+          <label className="flex cursor-pointer items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-zinc-200">
+                Share my activity with friends
+              </p>
+              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                Let accepted friends see your movie and anime watchlist activity and reviews.
+              </p>
+            </div>
+
+            <input
+              type="checkbox"
+              checked={profile.privacy.shareActivity}
+              disabled={savingPrivacy}
+              onChange={(event) =>
+                void updatePrivacy({ shareActivity: event.target.checked })
+              }
+              className="mt-1 h-4 w-4 accent-amber-400"
+            />
+          </label>
+
+          <div className="border-t border-white/[0.07]" />
+
+          <label className="flex cursor-pointer items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-zinc-200">
+                Allow friend requests
+              </p>
+              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                Let other approved Movie Hunt members send you friend requests.
+              </p>
+            </div>
+
+            <input
+              type="checkbox"
+              checked={profile.privacy.allowFriendRequests}
+              disabled={savingPrivacy}
+              onChange={(event) =>
+                void updatePrivacy({
+                  allowFriendRequests: event.target.checked,
+                })
+              }
+              className="mt-1 h-4 w-4 accent-amber-400"
+            />
+          </label>
+        </div>
+
+        {savingPrivacy && (
+          <p className="mt-4 text-xs text-zinc-500">
+            Saving privacy settings…
+          </p>
+        )}
+      </section>
     </div>
   )
 }
+
 
 function PageIntro({
   eyebrow,
