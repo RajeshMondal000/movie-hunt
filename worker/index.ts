@@ -922,10 +922,14 @@ app.patch('/api/profile', async (c) => {
       return c.json({ error: 'invalid_profile_name' }, 400)
     }
 
-    const name = body.name
-      .replace(/[\u0000-\u001F\u007F]/g, '')
-      .trim()
-      .replace(/\s+/g, ' ')
+    const name = [...body.name]
+    .filter((character) => {
+      const code = character.codePointAt(0) ?? 0
+      return code >= 0x20 && code !== 0x7f
+    })
+    .join('')
+    .trim()
+    .replace(/\s+/g, ' ')
 
     if (name.length < 2 || name.length > 40) {
       return c.json({
