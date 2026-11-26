@@ -95,6 +95,93 @@ async function fetchCachedJson<T>(
   }
 }
 
+
+/**
+ * Prefetches an API response into the shared cache.
+ * Reuses fresh cache entries and in-flight requests.
+ * Errors are intentionally swallowed because prefetching is optional.
+ */
+export async function prefetchCachedApiData<T>(
+  url: string,
+  ttlMs = DEFAULT_CACHE_TTL_MS,
+): Promise<T | null> {
+  try {
+    return await fetchCachedJson<T>(url, ttlMs)
+  } catch {
+    return null
+  }
+}
+
+const imagePreloadPromises = new Map<string, Promise<void>>()
+
+/**
+ * Downloads an image into the browser's normal image cache.
+ */
+export function prefetchImage(
+  url: string | null | undefined,
+): Promise<void> {
+  if (!url || typeof Image === 'undefined') {
+    return Promise.resolve()
+  }
+
+  const existing = imagePreloadPromises.get(url)
+  if (existing) return existing
+
+  const promise = new Promise<void>((resolve) => {
+    const image = new Image()
+    image.decoding = 'async'
+
+    image.onload = () => resolve()
+
+    image.onerror = () => {
+      imagePreloadPromises.delete(url)
+      resolve()
+    }
+
+    image.src = url
+
+    if (image.complete) {
+      if (image.naturalWidth === 0) {
+        imagePreloadPromises.delete(url)
+      }
+      resolve()
+    }
+  })
+
+  imagePreloadPromises.set(url, promise)
+
+  // Keep the image preload bookkeeping bounded.
+  while (imagePreloadPromises.size > 30) {
+    const oldestUrl = imagePreloadPromises.keys().next().value
+    if (!oldestUrl) break
+    imagePreloadPromises.delete(oldestUrl)
+  }
+
+  return promise
+}
+
+/**
+ * Avoid optional background downloads on constrained connections.
+ */
+export function shouldPrefetchOptionalData(): boolean {
+  if (typeof navigator === 'undefined') return true
+
+  const connection = (
+    navigator as Navigator & {
+      connection?: {
+        saveData?: boolean
+        effectiveType?: string
+      }
+    }
+  ).connection
+
+  if (connection?.saveData) return false
+
+  return !['slow-2g', '2g'].includes(
+    connection?.effectiveType ?? '',
+  )
+}
+
 export function useCachedApiData<T>(
   url: string | null,
   ttlMs = DEFAULT_CACHE_TTL_MS,

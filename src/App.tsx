@@ -26,6 +26,7 @@ import {
 import type { ReactNode } from 'react'
 import { authClient } from './lib/auth-client'
 import { FeaturedCarousel } from './components/FeaturedCarousel'
+import { PageJump } from './components/PageJump'
 
 import {
   Link,
@@ -40,6 +41,13 @@ import {
 import { tmdbImage, useTmdbData, type TmdbGenre, type TmdbMovie, type TmdbMovieDetails, type TmdbMovieList } from './lib/tmdb'
 import { AnimeAiPage, AnimeDetailsPage, AnimeDiscoverPage, AnimeHomePage, AnimeWatchlistPage } from './components/AnimeExperience'
 import { SocialFriendsPage } from './components/SocialExperience'
+import type { KitsuAnimeList } from './lib/anime'
+
+import {
+  prefetchCachedApiData,
+  prefetchImage,
+  shouldPrefetchOptionalData,
+} from './lib/request-cache'
 
 
 type ProfileStats = {
@@ -546,6 +554,75 @@ function AppShell() {
     if (typeof window === 'undefined') return 'movies'
     return window.localStorage.getItem('movie-hunt-mode') === 'anime' ? 'anime' : 'movies'
   })
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function preloadInitialCatalogues() {
+      // Three requests warm both homepages and both Discovery page-1 results.
+      const [trendingMovies, , popularAnime] = await Promise.all([
+        prefetchCachedApiData<TmdbMovieList>(
+          '/api/tmdb/trending?time_window=week',
+        ),
+
+        prefetchCachedApiData<TmdbMovieList>(
+          '/api/tmdb/popular?page=1',
+        ),
+
+        prefetchCachedApiData<KitsuAnimeList>(
+          '/api/anime/popular?page=1',
+        ),
+      ])
+
+      if (cancelled || !shouldPrefetchOptionalData()) return
+
+      // Preload the actual hero backgrounds for the first five slides
+      // in both libraries. Interleave them to give both modes early coverage.
+      const movieImages = (trendingMovies?.results ?? [])
+        .slice(0, 5)
+        .map(
+          (movie) =>
+            tmdbImage(movie.backdrop_path, 'w1280') ??
+            tmdbImage(movie.poster_path, 'w500'),
+        )
+
+      const animeImages = (popularAnime?.results ?? [])
+        .slice(0, 5)
+        .map((anime) => anime.coverUrl ?? anime.posterUrl)
+
+      const imageUrls: string[] = []
+
+      for (
+        let index = 0;
+        index < Math.max(movieImages.length, animeImages.length);
+        index++
+      ) {
+        const movieImage = movieImages[index]
+        const animeImage = animeImages[index]
+
+        if (movieImage) imageUrls.push(movieImage)
+        if (animeImage) imageUrls.push(animeImage)
+      }
+
+      // Limit image-download concurrency to avoid a large initial burst.
+      for (let index = 0; index < imageUrls.length; index += 3) {
+        if (cancelled) return
+
+        await Promise.all(
+          imageUrls
+            .slice(index, index + 3)
+            .map((url) => prefetchImage(url)),
+        )
+      }
+    }
+
+    void preloadInitialCatalogues()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const navItems = getNavItems(mode)
   const pageTitle = navItems.find((item) => item.to === location.pathname)?.label
     ?? (location.pathname.startsWith('/movie/') ? 'Movie details'
@@ -828,12 +905,58 @@ function DiscoverPage() {
     return () => window.clearTimeout(timeout)
   }, [query])
 
-  const moviesUrl = debouncedQuery
-    ? `/api/tmdb/search?query=${encodeURIComponent(debouncedQuery)}&page=${page}`
-    : selectedGenre
-      ? `/api/tmdb/discover?with_genres=${selectedGenre}&page=${page}`
-      : `/api/tmdb/popular?page=${page}`
+  function buildMoviesPageUrl(targetPage: number) {
+    if (debouncedQuery) {
+      return `/api/tmdb/search?query=${encodeURIComponent(debouncedQuery)}&page=${targetPage}`
+    }
+
+    if (selectedGenre) {
+      return `/api/tmdb/discover?with_genres=${selectedGenre}&page=${targetPage}`
+    }
+
+    return `/api/tmdb/popular?page=${targetPage}`
+  }
+
+  const moviesUrl = buildMoviesPageUrl(page)
   const movies = useTmdbData<TmdbMovieList>(moviesUrl)
+
+  const maxPages = Math.min(
+    movies.data?.total_pages ?? 1,
+    500,
+  )
+  useEffect(() => {
+    // Wait until the current query has settled and its results are available.
+    if (
+      !movies.data ||
+      query.trim() !== debouncedQuery ||
+      !shouldPrefetchOptionalData()
+    ) {
+      return
+    }
+
+    const targetPages = [
+      page - 2,
+      page - 1,
+      page + 1,
+      page + 2,
+    ].filter(
+      (targetPage) =>
+        targetPage >= 1 && targetPage <= maxPages,
+    )
+
+    for (const targetPage of targetPages) {
+      void prefetchCachedApiData<TmdbMovieList>(
+        buildMoviesPageUrl(targetPage),
+      )
+    }
+  }, [
+    movies.data,
+    page,
+    maxPages,
+    query,
+    debouncedQuery,
+    selectedGenre,
+  ])
 
   function chooseGenre(id: number | null) {
     setSelectedGenre(id)
@@ -881,13 +1004,39 @@ function DiscoverPage() {
       </div>
       <MovieGrid movies={movies.data?.results ?? []} loading={movies.loading || (Boolean(query.trim()) && query.trim() !== debouncedQuery)} error={movies.error} emptyMessage="Try a different title or genre." />
 
-      {movies.data && movies.data.total_pages > 1 && (
-        <div className="mt-8 flex items-center justify-center gap-3">
-          <button disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 disabled:opacity-30">Previous</button>
-          <span className="text-xs text-zinc-500">Page {page} of {Math.min(movies.data.total_pages, 500)}</span>
-          <button disabled={page >= Math.min(movies.data.total_pages, 500)} onClick={() => setPage((current) => current + 1)} className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 disabled:opacity-30">Next</button>
+
+      {movies.data && maxPages > 1 && (
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <button
+            disabled={page <= 1 || movies.loading}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 disabled:opacity-30"
+          >
+            Previous
+          </button>
+
+          <span className="text-xs text-zinc-500">
+            Page {page} of {maxPages}
+          </span>
+
+          <PageJump
+            key={`${page}-${query}-${selectedGenre ?? 'all'}`}
+            page={page}
+            totalPages={maxPages}
+            onGo={setPage}
+            accent="amber"
+          />
+
+          <button
+            disabled={page >= maxPages || movies.loading}
+            onClick={() => setPage((current) => Math.min(maxPages, current + 1))}
+            className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 disabled:opacity-30"
+          >
+            Next
+          </button>
         </div>
       )}
+
     </div>
   )
 }
