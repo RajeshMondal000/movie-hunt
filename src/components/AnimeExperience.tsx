@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -6,6 +6,8 @@ import {
   CalendarDays,
   Clock3,
   Film,
+  ArrowUpRight,
+  Users,
   Library,
   LoaderCircle,
   Play,
@@ -160,24 +162,59 @@ export function AnimeHomePage() {
         />
       </section>
 
-      <section className="rounded-2xl border border-violet-300/10 bg-gradient-to-br from-violet-500/[0.09] to-white/[0.02] p-6">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-300/10 text-violet-200">
-          <Sparkles size={19} />
-        </div>
-        <h2 className="mt-4 text-lg font-semibold text-white">
-          Not sure what to watch next?
-        </h2>
-        <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-500">
-          Describe the kind of anime you want. Movie Hunt will combine your
-          anime list with catalogue matches and Gemini explanations.
-        </p>
+
+      <section className="grid gap-4 md:grid-cols-2">
+        {/* Anime AI recommendation card */}
         <Link
           to="/ai"
-          className="mt-4 inline-flex items-center gap-2 rounded-xl bg-violet-300 px-4 py-2.5 text-xs font-bold text-zinc-950 hover:bg-violet-200"
+          className="group rounded-2xl border border-violet-300/10 bg-gradient-to-br from-violet-500/[0.09] to-white/[0.02] p-6 transition hover:border-violet-300/20"
         >
-          Get anime recommendations <ArrowRight size={14} />
+          <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl bg-violet-300/10 text-violet-200">
+            <Sparkles size={19} />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-semibold text-white">
+              Not sure what to watch next?
+            </h3>
+            <ArrowUpRight
+              size={17}
+              className="shrink-0 text-zinc-500 transition group-hover:text-violet-200"
+            />
+          </div>
+
+          <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">
+            Describe the kind of anime you want. Get recommendations based on
+            your anime list and preferences.
+          </p>
+        </Link>
+
+        {/* Anime community card */}
+        <Link
+          to="/friends"
+          className="group rounded-2xl border border-violet-300/10 bg-gradient-to-br from-violet-500/[0.09] to-white/[0.02] p-6 transition hover:border-violet-300/20"
+        >
+          <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl bg-violet-300/10 text-violet-200">
+            <Users size={19} />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-semibold text-white">
+              Anime is better shared.
+            </h3>
+            <ArrowUpRight
+              size={17}
+              className="shrink-0 text-zinc-500 transition group-hover:text-violet-200"
+            />
+          </div>
+
+          <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">
+            Invite your people, discover what your friends watch, and build
+            a little anime club.
+          </p>
         </Link>
       </section>
+
     </div>
   )
 }
@@ -232,15 +269,18 @@ export function AnimeDiscoverPage() {
     return () => window.clearTimeout(timer)
   }, [query])
 
-  const genreParam = selectedGenre
-    ? `&genre=${encodeURIComponent(toKitsuGenreSlug(selectedGenre))}`
-    : ''
+  const buildAnimePageUrl = useCallback(
+    (targetPage: number) => {
+      const genreParam = selectedGenre
+        ? `&genre=${encodeURIComponent(toKitsuGenreSlug(selectedGenre))}`
+        : ''
 
-  function buildAnimePageUrl(targetPage: number) {
-    return debouncedQuery
-      ? `/api/anime/search?query=${encodeURIComponent(debouncedQuery)}&page=${targetPage}${genreParam}`
-      : `/api/anime/popular?page=${targetPage}${genreParam}`
-  }
+      return debouncedQuery
+        ? `/api/anime/search?query=${encodeURIComponent(debouncedQuery)}&page=${targetPage}${genreParam}`
+        : `/api/anime/popular?page=${targetPage}${genreParam}`
+    },
+    [debouncedQuery, selectedGenre],
+  )
 
   const url = buildAnimePageUrl(page)
   const data = useAnimeData<KitsuAnimeList>(url)
@@ -275,12 +315,12 @@ export function AnimeDiscoverPage() {
       )
     }
   }, [
+    buildAnimePageUrl,
     data.data,
     page,
     maxPages,
     query,
     debouncedQuery,
-    selectedGenre,
   ])
 
   function selectGenre(genre: string | null) {

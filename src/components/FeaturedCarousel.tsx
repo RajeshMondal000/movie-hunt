@@ -46,25 +46,25 @@ export function FeaturedCarousel({
   const theme =
     accent === 'amber'
       ? {
-          border: 'border-amber-200/10',
-          badge: 'border-amber-200/15 bg-amber-200/[0.06] text-amber-200',
-          title: 'text-amber-300',
-          button: 'bg-amber-400 text-zinc-950 hover:bg-amber-300',
-          dot: 'bg-amber-300',
-          hover: 'hover:text-amber-200',
-          glow: 'bg-[radial-gradient(ellipse_at_80%_40%,rgba(190,112,43,0.22),transparent_45%)]',
-          line: 'bg-amber-400/70',
-        }
+        border: 'border-amber-200/10',
+        badge: 'border-amber-200/15 bg-amber-200/[0.06] text-amber-200',
+        title: 'text-amber-300',
+        button: 'bg-amber-400 text-zinc-950 hover:bg-amber-300',
+        dot: 'bg-amber-300',
+        hover: 'hover:text-amber-200',
+        glow: 'bg-[radial-gradient(ellipse_at_80%_40%,rgba(190,112,43,0.22),transparent_45%)]',
+        line: 'bg-amber-400/70',
+      }
       : {
-          border: 'border-violet-300/10',
-          badge: 'border-violet-200/15 bg-violet-200/[0.06] text-violet-200',
-          title: 'text-violet-300',
-          button: 'bg-violet-300 text-zinc-950 hover:bg-violet-200',
-          dot: 'bg-violet-300',
-          hover: 'hover:text-violet-200',
-          glow: 'bg-[radial-gradient(ellipse_at_80%_40%,rgba(139,92,246,0.23),transparent_45%)]',
-          line: 'bg-violet-300/70',
-        }
+        border: 'border-violet-300/10',
+        badge: 'border-violet-200/15 bg-violet-200/[0.06] text-violet-200',
+        title: 'text-violet-300',
+        button: 'bg-violet-300 text-zinc-950 hover:bg-violet-200',
+        dot: 'bg-violet-300',
+        hover: 'hover:text-violet-200',
+        glow: 'bg-[radial-gradient(ellipse_at_80%_40%,rgba(139,92,246,0.23),transparent_45%)]',
+        line: 'bg-violet-300/70',
+      }
 
   useEffect(() => {
     if (paused || slides.length <= 1) return
@@ -93,7 +93,7 @@ export function FeaturedCarousel({
       aria-label={eyebrow}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      className={`relative isolate overflow-hidden rounded-[26px] border bg-[#151311] ${theme.border}`}
+      className={`relative isolate aspect-auto min-h-[520px] overflow-hidden rounded-[26px] border bg-[#151311] lg:aspect-[2.21/1] lg:min-h-0 ${theme.border}`}
     >
       {/* 1. Sliding Background Track */}
       {slides.length > 0 && (
@@ -108,8 +108,8 @@ export function FeaturedCarousel({
               style={
                 slide.image
                   ? {
-                      backgroundImage: `linear-gradient(90deg, rgba(9,9,11,.97) 5%, rgba(9,9,11,.82) 48%, rgba(9,9,11,.28) 100%), url("${slide.image}")`,
-                    }
+                    backgroundImage: `linear-gradient(90deg, rgba(9,9,11,.97) 5%, rgba(9,9,11,.82) 48%, rgba(9,9,11,.28) 100%), url("${slide.image}")`,
+                  }
                   : undefined
               }
             />
@@ -120,7 +120,7 @@ export function FeaturedCarousel({
       <div className={`pointer-events-none absolute inset-0 -z-10 ${theme.glow}`} />
 
       {/* Main Layout Container */}
-      <div className="flex min-h-[440px] flex-col justify-between py-8 sm:py-10 lg:min-h-[480px] lg:py-12">
+      <div className="flex h-full min-h-0 flex-col justify-between pt-6 pb-3 sm:pt-7 sm:pb-3 lg:pt-8 lg:pb-2">
         {/* Top Stationary Eyebrow */}
         <div className="px-6 sm:px-9 lg:px-12">
           <div
@@ -132,7 +132,7 @@ export function FeaturedCarousel({
         </div>
 
         {/* 2. Sliding Content Track */}
-        <div className="my-6 overflow-hidden" aria-live="off">
+        <div className="my-3 min-h-0 flex-1 overflow-hidden" aria-live="off">
           {slides.length > 0 ? (
             <div
               className="flex transition-transform duration-700 ease-out"
@@ -147,11 +147,8 @@ export function FeaturedCarousel({
                     className="w-full shrink-0 px-6 sm:px-9 lg:px-12"
                   >
                     <div className="max-w-3xl">
-                      <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">
-                        Featured pick
-                      </p>
 
-                      <h1 className="max-w-2xl text-4xl font-semibold leading-[1.08] tracking-[-0.045em] text-white sm:text-5xl lg:text-[58px]">
+                      <h1 className="max-w-3xl text-[clamp(2.25rem,4vw,3.625rem)] font-semibold leading-[1.02] tracking-[-0.045em] text-white">
                         <Link
                           to={slide.href}
                           tabIndex={isActive ? 0 : -1}
@@ -161,7 +158,7 @@ export function FeaturedCarousel({
                         </Link>
                       </h1>
 
-                      <p className="mt-5 line-clamp-3 max-w-xl text-sm leading-7 text-zinc-300 sm:text-base">
+                      <p className="mt-4 line-clamp-4 max-w-2xl text-sm leading-7 text-zinc-300 sm:text-base">
                         {slide.description}
                       </p>
 
@@ -221,7 +218,7 @@ export function FeaturedCarousel({
             </Link>
           </div>
 
-          <div className="relative mt-10 flex flex-wrap items-center justify-between gap-4 sm:mt-12">
+          <div className="relative mt-2 flex flex-wrap items-center justify-between gap-3 sm:mt-3">
             <div className="flex items-center gap-3 text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-400">
               <span className={`h-px w-7 ${theme.line}`} />
               Discover · Track · Recommend · Share
@@ -243,11 +240,10 @@ export function FeaturedCarousel({
                       aria-label={`Show slide ${index + 1}: ${slide.title}`}
                       aria-pressed={safeIndex === index}
                       onClick={() => setActiveIndex(index)}
-                      className={`h-1.5 rounded-full transition-all duration-300 ${
-                        safeIndex === index
+                      className={`h-1.5 rounded-full transition-all duration-300 ${safeIndex === index
                           ? `w-6 ${theme.dot}`
                           : 'w-1.5 bg-white/30 hover:bg-white/60'
-                      }`}
+                        }`}
                     />
                   ))}
                 </div>

@@ -5,13 +5,13 @@ import {
   ArrowUpRight,
   Bookmark,
   Trash2,
-  ChevronRight,
   Clapperboard,
   CalendarDays,
   Clock3,
   Compass,
   Film,
   Heart,
+  ChevronRight,
   Home,
   Library,
   LoaderCircle,
@@ -27,6 +27,7 @@ import type { ReactNode } from 'react'
 import { authClient } from './lib/auth-client'
 import { FeaturedCarousel } from './components/FeaturedCarousel'
 import { PageJump } from './components/PageJump'
+import { useLocation } from 'react-router-dom'
 
 import {
   Link,
@@ -34,7 +35,6 @@ import {
   Navigate,
   Route,
   Routes,
-  useLocation,
   useNavigate,
   useParams,
 } from 'react-router-dom'
@@ -116,6 +116,12 @@ function getNavItems(mode: MediaMode): NavItem[] {
   ]
 }
 
+type AccountNavInfo = {
+  role: string
+  isAnonymous: boolean
+  approvalStatus: string
+  approvalExpiresAt: number | null
+}
 
 function ApiStatus() {
   const [connected, setConnected] = useState<boolean | null>(null)
@@ -162,189 +168,312 @@ function ApiStatus() {
   )
 }
 
-function Sidebar({ mode, onModeChange }: { mode: MediaMode; onModeChange: (mode: MediaMode) => void }) {
-  const navItems = getNavItems(mode)
+
+function ProfileNavLink({
+  mode,
+  signedIn,
+  sessionLoading,
+  account,
+  mobile = false,
+}: {
+  mode: MediaMode
+  signedIn: boolean
+  sessionLoading: boolean
+  account: AccountNavInfo | null
+  mobile?: boolean
+}) {
+  const statusLabel = sessionLoading
+    ? ''
+    : !signedIn
+      ? 'Sign in'
+      : account?.isAnonymous
+        ? 'Guest'
+        : account?.approvalStatus === 'pending'
+          ? 'Pending'
+          : ''
+
   return (
-    <aside className="hidden min-h-screen w-[248px] shrink-0 flex-col border-r border-white/[0.07] bg-black/20 px-5 py-7 lg:flex">
-      <Link to="/" className="mb-9 flex items-center gap-3 px-2">
+    <NavLink
+      to={signedIn ? '/profile' : '/login'}
+      className={({ isActive }) =>
+        mobile
+          ? `flex min-w-0 flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[9px] font-medium ${isActive
+            ? mode === 'movies'
+              ? 'text-amber-300'
+              : 'text-violet-200'
+            : 'text-zinc-500'
+          }`
+          : `group flex items-center gap-3 rounded-xl px-3 py-3 text-[13px] font-medium transition ${isActive
+            ? mode === 'movies'
+              ? 'bg-amber-400/10 text-amber-300 ring-1 ring-amber-300/10'
+              : 'bg-violet-300/10 text-violet-200 ring-1 ring-violet-300/10'
+            : 'text-zinc-500 hover:bg-white/[0.045] hover:text-zinc-200'
+          }`
+      }
+    >
+      <UserRound size={17} strokeWidth={1.8} />
+      <span>Profile</span>
+
+      {statusLabel && (
+        <span
+          className={
+            mobile
+              ? 'max-w-full truncate text-[7px] font-bold uppercase tracking-wide text-zinc-500'
+              : 'ml-auto rounded-md border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-zinc-400'
+          }
+        >
+          {statusLabel}
+        </span>
+      )}
+    </NavLink>
+  )
+}
+
+
+
+function Sidebar({
+  mode,
+  onModeChange,
+  signedIn,
+  sessionLoading,
+  account,
+}: {
+  mode: MediaMode
+  onModeChange: (mode: MediaMode) => void
+  signedIn: boolean
+  sessionLoading: boolean
+  account: AccountNavInfo | null
+}) {
+  const navItems = getNavItems(mode)
+
+  return (
+    <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 flex-col border-r border-white/[0.07] bg-black/20 px-5 py-5 lg:flex">
+      <Link to="/" className="mb-6 flex items-center gap-3 px-2">
         <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-zinc-950 shadow-lg ${mode === 'movies' ? 'bg-amber-500 shadow-amber-950/30' : 'bg-violet-300 shadow-violet-950/30'}`}>
           <Clapperboard size={21} strokeWidth={2.3} />
         </div>
         <div>
-          <div className="text-[17px] font-bold tracking-tight text-white">movie<span className={mode === 'movies' ? 'text-amber-400' : 'text-violet-300'}>hunt</span></div>
-          <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">your movie & anime club</div>
+          <div className="text-[20px] font-bold tracking-tight text-white">
+            Movie<span className={mode === 'movies' ? 'text-amber-400' : 'text-violet-300'}>Hunt</span>
+          </div>
+          <div className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">
+            your movie & anime club
+          </div>
         </div>
       </Link>
 
       <div className="mb-6">
-        <div className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-600">Switch library</div>
+        <div className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-600">
+          Switch library
+        </div>
         <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/[0.07] bg-black/30 p-1">
-          <button type="button" aria-pressed={mode === 'movies'} onClick={() => onModeChange('movies')} className={`rounded-lg px-2 py-2.5 text-xs font-semibold transition ${mode === 'movies' ? 'bg-amber-400 text-zinc-950 shadow' : 'text-zinc-500 hover:text-zinc-200'}`}>Movies</button>
-          <button type="button" aria-pressed={mode === 'anime'} onClick={() => onModeChange('anime')} className={`rounded-lg px-2 py-2.5 text-xs font-semibold transition ${mode === 'anime' ? 'bg-violet-300 text-zinc-950 shadow' : 'text-zinc-500 hover:text-zinc-200'}`}>Anime</button>
+          <button
+            type="button"
+            aria-pressed={mode === 'movies'}
+            onClick={() => onModeChange('movies')}
+            className={`rounded-lg px-2 py-2.5 text-xs font-semibold transition ${mode === 'movies' ? 'bg-amber-400 text-zinc-950 shadow' : 'text-zinc-500 hover:text-zinc-200'}`}
+          >
+            Movies
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === 'anime'}
+            onClick={() => onModeChange('anime')}
+            className={`rounded-lg px-2 py-2.5 text-xs font-semibold transition ${mode === 'anime' ? 'bg-violet-300 text-zinc-950 shadow' : 'text-zinc-500 hover:text-zinc-200'}`}
+          >
+            Anime
+          </button>
         </div>
       </div>
 
-      <div className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-600">Menu</div>
+      <div className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-600">
+        Menu
+      </div>
+
       <nav className="flex flex-col gap-1">
         {navItems.map((item) => {
           const Icon = item.icon
+
+          if (item.to === '/profile') {
+            return (
+              <ProfileNavLink
+                key={item.to}
+                mode={mode}
+                signedIn={signedIn}
+                sessionLoading={sessionLoading}
+                account={account}
+              />
+            )
+          }
+
           return (
-            <NavLink key={item.to} to={item.to} end={item.to === '/'} className={({ isActive }) =>
-              `group flex items-center gap-3 rounded-xl px-3 py-3 text-[13px] font-medium transition ${isActive
-                ? mode === 'movies' ? 'bg-amber-400/10 text-amber-300 ring-1 ring-amber-300/10' : 'bg-violet-300/10 text-violet-200 ring-1 ring-violet-300/10'
-                : 'text-zinc-500 hover:bg-white/[0.045] hover:text-zinc-200'}`
-            }>
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.to === '/'}
+              className={({ isActive }) =>
+                `group flex items-center gap-3 rounded-xl px-3 py-3 text-[13px] font-medium transition ${isActive
+                  ? mode === 'movies'
+                    ? 'bg-amber-400/10 text-amber-300 ring-1 ring-amber-300/10'
+                    : 'bg-violet-300/10 text-violet-200 ring-1 ring-violet-300/10'
+                  : 'text-zinc-500 hover:bg-white/[0.045] hover:text-zinc-200'
+                }`
+              }
+            >
               <Icon size={17} strokeWidth={1.8} />
               {item.label}
-              {(item.label === 'AI picks' || item.label === 'Anime picks') && <span className={`ml-auto rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${mode === 'movies' ? 'bg-amber-400/10 text-amber-300' : 'bg-violet-300/10 text-violet-200'}`}>AI</span>}
+
+              {(item.label === 'AI picks' || item.label === 'Anime picks') && (
+                <span className={`ml-auto rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${mode === 'movies' ? 'bg-amber-400/10 text-amber-300' : 'bg-violet-300/10 text-violet-200'}`}>
+                  AI
+                </span>
+              )}
             </NavLink>
           )
         })}
       </nav>
 
-      <div className={`mt-auto rounded-2xl border border-white/[0.07] p-4 ${mode === 'movies' ? 'bg-gradient-to-br from-amber-500/[0.10] to-transparent' : 'bg-gradient-to-br from-violet-500/[0.12] to-transparent'}`}>
-        <div className={`mb-3 flex h-8 w-8 items-center justify-center rounded-lg ${mode === 'movies' ? 'bg-amber-400/10 text-amber-300' : 'bg-violet-300/10 text-violet-200'}`}><Heart size={16} /></div>
-        <p className="text-sm font-semibold text-zinc-200">{mode === 'movies' ? 'Movies are better together.' : 'Anime is better shared.'}</p>
-        <p className="mt-1 text-xs leading-5 text-zinc-500">Invite your people and build a little watch club.</p>
-        <Link to="/friends" className={`mt-3 inline-flex items-center gap-1.5 text-xs font-semibold ${mode === 'movies' ? 'text-amber-300 hover:text-amber-200' : 'text-violet-200 hover:text-violet-100'}`}>Explore the club <ArrowUpRight size={13} /></Link>
+
+      <div className="mt-auto border-t border-white/[0.07] pt-4">
+        <div>
+          <p className="mb-2.5 px-1 text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+            Connect with me
+          </p>
+
+          <div className="grid grid-cols-2 gap-2">
+            {/* GitHub Button */}
+            <a
+              href="https://github.com/RajeshMondal000"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group relative flex overflow-hidden rounded-full p-[1px] transition-shadow duration-300 hover:shadow-[0_0_16px_rgba(103,232,249,0.45)]"
+            >
+              <span
+                aria-hidden="true"
+                className="absolute left-1/2 top-1/2 h-[130px] w-[130px] -translate-x-1/2 -translate-y-1/2 animate-[spin_3s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,transparent_0%,transparent_72%,#67e8f9_90%,#ffffff_100%)]"
+              />
+              <span className="relative flex w-full items-center justify-center gap-1 rounded-full bg-[#111113] px-2.5 py-1.5 text-xs text-zinc-300 transition-colors duration-300 group-hover:bg-[#14191c] group-hover:text-cyan-100">
+                GitHub
+                <ArrowUpRight size={12} />
+              </span>
+            </a>
+
+            {/* LinkedIn Button */}
+            <a
+              href="https://www.linkedin.com/in/rajeshmondal000/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group relative flex overflow-hidden rounded-full p-[1px] transition-shadow duration-300 hover:shadow-[0_0_16px_rgba(103,232,249,0.45)]"
+            >
+              <span
+                aria-hidden="true"
+                className="absolute left-1/2 top-1/2 h-[130px] w-[130px] -translate-x-1/2 -translate-y-1/2 animate-[spin_3s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,transparent_0%,transparent_72%,#67e8f9_90%,#ffffff_100%)]"
+              />
+              <span className="relative flex w-full items-center justify-center gap-1 rounded-full bg-[#111113] px-2.5 py-1.5 text-xs text-zinc-300 transition-colors duration-300 group-hover:bg-[#14191c] group-hover:text-cyan-100">
+                LinkedIn
+                <ArrowUpRight size={12} />
+              </span>
+            </a>
+          </div>
+        </div>
+
+        <div className="mt-3 border-t border-white/[0.06] pt-3">
+          <ApiStatus />
+        </div>
       </div>
-      <div className="mt-5 px-2 text-[10px] text-zinc-700">MOVIE HUNT · STUDENT PROJECT</div>
+
+
     </aside>
   )
 }
 
-function MobileNav({ mode, onModeChange }: { mode: MediaMode; onModeChange: (mode: MediaMode) => void }) {
-  const mobileItems = getNavItems(mode).slice(0, 5)
+
+
+function MobileNav({
+  mode,
+  onModeChange,
+  signedIn,
+  sessionLoading,
+  account,
+}: {
+  mode: MediaMode
+  onModeChange: (mode: MediaMode) => void
+  signedIn: boolean
+  sessionLoading: boolean
+  account: AccountNavInfo | null
+}) {
+  const mobileItems = getNavItems(mode)
+
   return (
     <nav className="fixed inset-x-3 bottom-3 z-30 rounded-2xl border border-white/10 bg-[#141416]/95 p-2 shadow-2xl shadow-black/50 backdrop-blur-xl lg:hidden">
       <div className="mb-1 grid grid-cols-2 gap-1 rounded-xl border border-white/[0.07] bg-black/30 p-1">
-        <button type="button" aria-pressed={mode === 'movies'} onClick={() => onModeChange('movies')} className={`rounded-lg py-2 text-[10px] font-semibold transition ${mode === 'movies' ? 'bg-amber-400 text-zinc-950' : 'text-zinc-500 hover:text-zinc-200'}`}>Movies</button>
-        <button type="button" aria-pressed={mode === 'anime'} onClick={() => onModeChange('anime')} className={`rounded-lg py-2 text-[10px] font-semibold transition ${mode === 'anime' ? 'bg-violet-300 text-zinc-950' : 'text-zinc-500 hover:text-zinc-200'}`}>Anime</button>
+        <button
+          type="button"
+          aria-pressed={mode === 'movies'}
+          onClick={() => onModeChange('movies')}
+          className={`rounded-lg py-2 text-[10px] font-semibold transition ${mode === 'movies' ? 'bg-amber-400 text-zinc-950' : 'text-zinc-500 hover:text-zinc-200'}`}
+        >
+          Movies
+        </button>
+        <button
+          type="button"
+          aria-pressed={mode === 'anime'}
+          onClick={() => onModeChange('anime')}
+          className={`rounded-lg py-2 text-[10px] font-semibold transition ${mode === 'anime' ? 'bg-violet-300 text-zinc-950' : 'text-zinc-500 hover:text-zinc-200'}`}
+        >
+          Anime
+        </button>
       </div>
-      <div className="flex items-center justify-around">
+
+      <div className="grid grid-cols-6 items-center">
         {mobileItems.map((item) => {
           const Icon = item.icon
-          return <NavLink key={item.to} to={item.to} end={item.to === '/'} className={({ isActive }) =>
-            `flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-[9px] font-medium ${isActive ? mode === 'movies' ? 'text-amber-300' : 'text-violet-200' : 'text-zinc-500'}`
-          }>
-            <Icon size={18} />
-            <span>{item.label === 'My watchlist' ? 'Watchlist' : item.label === 'My anime list' ? 'Anime list' : item.label === 'Anime picks' ? 'Anime AI' : item.label}</span>
-          </NavLink>
+
+          if (item.to === '/profile') {
+            return (
+              <ProfileNavLink
+                key={item.to}
+                mode={mode}
+                signedIn={signedIn}
+                sessionLoading={sessionLoading}
+                account={account}
+                mobile
+              />
+            )
+          }
+
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.to === '/'}
+              className={({ isActive }) =>
+                `flex min-w-0 flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[9px] font-medium ${isActive
+                  ? mode === 'movies'
+                    ? 'text-amber-300'
+                    : 'text-violet-200'
+                  : 'text-zinc-500'
+                }`
+              }
+            >
+              <Icon size={18} />
+              <span className="truncate">
+                {item.label === 'My watchlist'
+                  ? 'Watchlist'
+                  : item.label === 'My anime list'
+                    ? 'Anime list'
+                    : item.label === 'Anime picks'
+                      ? 'Anime AI'
+                      : item.label}
+              </span>
+            </NavLink>
+          )
         })}
       </div>
     </nav>
   )
 }
 
-function AuthControl() {
-  const { data: session, isPending } = authClient.useSession()
-  type AccountInfo = {
-    role: string
-    isAnonymous: boolean
-    approvalStatus: string
-    approvalExpiresAt: number | null
-  }
-
-  const [accountState, setAccountState] = useState<{
-    userId: string
-    account: AccountInfo | null
-  } | null>(null)
-  const currentUserId = session?.user?.id
-
-  useEffect(() => {
-    let active = true
-    if (!currentUserId) {
-      return () => {
-        active = false
-      }
-    }
-
-    fetch('/api/me')
-      .then(async (response) => {
-        if (!response.ok) throw new Error('Could not load account status')
-        return response.json() as Promise<{ user: AccountInfo }>
-      })
-      .then((data) => {
-        if (active) setAccountState({ userId: currentUserId, account: data.user })
-      })
-      .catch(() => {
-        if (active) setAccountState({ userId: currentUserId, account: null })
-      })
-
-    return () => {
-      active = false
-    }
-  }, [currentUserId])
-
-  const account =
-    currentUserId && accountState?.userId === currentUserId
-      ? accountState.account
-      : null
-
-  if (isPending) {
-    return <span className="text-xs text-zinc-600">Checking account…</span>
-  }
-
-  if (!session?.user) {
-    return (
-      <Link
-        to="/login"
-        className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-3.5 py-2 text-xs font-bold text-zinc-950 transition hover:bg-amber-300"
-      >
-        Sign in with Google
-      </Link>
-
-    )
-  }
-
-  const isPendingApproval = account?.approvalStatus === 'pending'
-
-  return (
-    <div className="flex items-center gap-2">
-      {account?.role === 'admin' && (
-        <Link
-          to="/admin"
-          className="hidden rounded-lg border border-amber-400/20 px-2.5 py-1.5 text-[11px] font-semibold text-amber-300 sm:inline-flex"
-        >
-          Admin
-        </Link>
-      )}
-      {account?.isAnonymous && (
-        <>
-          <span className="rounded-lg border border-violet-400/20 bg-violet-400/5 px-2.5 py-1.5 text-[11px] text-violet-200">
-            Guest mode · 5h
-          </span>
-
-          <button
-            type="button"
-            onClick={() => {
-              void authClient.signIn.social({
-                provider: 'google',
-                callbackURL: '/',
-              })
-            }}
-            className="rounded-lg bg-amber-400 px-3 py-2 text-[11px] font-bold text-zinc-950 hover:bg-amber-300"
-          >
-            Create account
-          </button>
-        </>
-      )}
-
-      {isPendingApproval && !account?.isAnonymous && (
-        <span className="hidden rounded-lg border border-amber-400/20 bg-amber-400/5 px-2.5 py-1.5 text-[11px] text-amber-200 md:inline-flex">
-          Awaiting approval
-        </span>
-      )}
-      <button
-        type="button"
-        onClick={() => void authClient.signOut()}
-        className="rounded-xl border border-white/10 px-3 py-2 text-xs font-medium text-zinc-300 transition hover:bg-white/5"
-      >
-        Sign out
-      </button>
-    </div>
-  )
-}
 
 function LoginPage() {
   const { data: session, isPending } = authClient.useSession()
@@ -548,12 +677,84 @@ function AdminPage() {
 }
 
 function AppShell() {
-  const location = useLocation()
   const navigate = useNavigate()
   const [mode, setMode] = useState<MediaMode>(() => {
     if (typeof window === 'undefined') return 'movies'
     return window.localStorage.getItem('movie-hunt-mode') === 'anime' ? 'anime' : 'movies'
   })
+
+  const { data: session, isPending: sessionLoading } =
+    authClient.useSession()
+
+  const currentUserId = session?.user?.id
+
+  const [accountState, setAccountState] = useState<{
+    userId: string
+    account: AccountNavInfo | null
+  } | null>(null)
+
+  const location = useLocation()
+
+  const pageTitle =
+    location.pathname === '/'
+      ? 'Home'
+      : location.pathname === '/discover'
+        ? 'Discover'
+        : location.pathname === '/watchlist'
+          ? mode === 'movies' ? 'My watchlist' : 'My anime list'
+          : location.pathname === '/ai'
+            ? mode === 'movies' ? 'AI picks' : 'Anime picks'
+            : location.pathname === '/friends'
+              ? 'Friends'
+              : location.pathname === '/profile'
+                ? 'Profile'
+                : location.pathname.startsWith('/movie/')
+                  ? 'Movie details'
+                  : location.pathname.startsWith('/anime/')
+                    ? 'Anime details'
+                    : location.pathname === '/login'
+                      ? 'Sign in'
+                      : 'Movie Hunt'
+
+  useEffect(() => {
+    if (!currentUserId) return
+
+    let active = true
+
+    fetch('/api/me')
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Could not load account status')
+        }
+
+        return response.json() as Promise<{ user: AccountNavInfo }>
+      })
+      .then((data) => {
+        if (active) {
+          setAccountState({
+            userId: currentUserId,
+            account: data.user,
+          })
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAccountState({
+            userId: currentUserId,
+            account: null,
+          })
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [currentUserId])
+
+  const account =
+    currentUserId && accountState?.userId === currentUserId
+      ? accountState.account
+      : null
 
   useEffect(() => {
     let cancelled = false
@@ -623,69 +824,135 @@ function AppShell() {
     }
   }, [])
 
-  const navItems = getNavItems(mode)
-  const pageTitle = navItems.find((item) => item.to === location.pathname)?.label
-    ?? (location.pathname.startsWith('/movie/') ? 'Movie details'
-      : location.pathname.startsWith('/anime/') ? 'Anime details' : 'Movie Hunt')
-
   function changeMode(nextMode: MediaMode) {
     setMode(nextMode)
     window.localStorage.setItem('movie-hunt-mode', nextMode)
     navigate('/')
   }
 
+
   return (
     <div className="min-h-screen text-zinc-100 lg:flex">
-      <Sidebar mode={mode} onModeChange={changeMode} />
-      <div className="min-w-0 flex-1">
-        <header className="sticky top-0 z-20 border-b border-white/[0.06] bg-[#09090b]/85 backdrop-blur-xl">
-          <div className="mx-auto flex h-[76px] max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-7 lg:px-10">
-            <div className="flex items-center gap-3 lg:hidden">
-              <div className={`flex h-9 w-9 items-center justify-center rounded-xl text-zinc-950 ${mode === 'movies' ? 'bg-amber-500' : 'bg-violet-300'}`}><Clapperboard size={19} /></div>
-              <span className="font-bold tracking-tight text-white">movie<span className={mode === 'movies' ? 'text-amber-400' : 'text-violet-300'}>hunt</span></span>
-            </div>
-            <Link to="/discover" className="hidden h-10 w-full max-w-[390px] items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 text-sm text-zinc-500 transition hover:border-white/15 hover:text-zinc-300 sm:flex">
-              <Search size={16} /> Search {mode === 'movies' ? 'movies' : 'anime'}, genres, people...
-              <span className="ml-auto rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-zinc-600">/</span>
-            </Link>
-            <div className="ml-auto flex items-center gap-3"><ApiStatus /><AuthControl /></div>
-          </div>
-        </header>
+      <Sidebar
+        mode={mode}
+        onModeChange={changeMode}
+        signedIn={Boolean(session?.user)}
+        sessionLoading={sessionLoading}
+        account={account}
+      />
 
-        <main className="mx-auto max-w-[1440px] px-4 pb-36 pt-7 sm:px-7 sm:pt-9 lg:px-10 lg:pb-12">
-          <div className="mb-7 flex items-center gap-2 text-xs text-zinc-600"><span>Movie Hunt</span><ChevronRight size={13} /><span className="text-zinc-400">{pageTitle}</span></div>
+      <div className="min-w-0 flex-1">
+        <main className="mx-auto max-w-[1440px] px-4 pb-36 pt-3 sm:px-7 sm:pt-4 lg:px-10 lg:pb-12">
+
+          <div className="mb-2 flex min-h-9 items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2 whitespace-nowrap text-xs text-zinc-500">
+              <span>Movie Hunt</span>
+              <ChevronRight size={13} />
+              <span className="truncate text-zinc-300">{pageTitle}</span>
+            </div>
+
+            <Link
+              to="/discover"
+              className="flex h-9 w-full min-w-[180px] max-w-[340px] shrink items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 text-xs text-zinc-500 transition hover:border-white/15 hover:text-zinc-300"
+            >
+              <Search size={15} />
+              <span className="truncate">
+                Search {mode === 'movies' ? 'movies' : 'anime'}, genres, people...
+              </span>
+              <span className="ml-auto rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-zinc-600">
+                /
+              </span>
+            </Link>
+          </div>
+
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/admin" element={<AdminPage />} />
-            <Route path="/" element={mode === 'movies' ? <HomePage /> : <AnimeHomePage />} />
-            <Route path="/discover" element={mode === 'movies' ? <DiscoverPage /> : <AnimeDiscoverPage />} />
+
+            <Route
+              path="/"
+              element={mode === 'movies' ? <HomePage /> : <AnimeHomePage />}
+            />
+
+            <Route
+              path="/discover"
+              element={mode === 'movies' ? <DiscoverPage /> : <AnimeDiscoverPage />}
+            />
+
             <Route path="/movie/:id" element={<MovieDetailsPage />} />
             <Route path="/anime/:id" element={<AnimeDetailsPage />} />
-            <Route path="/watchlist" element={mode === 'movies' ? <WatchlistPage /> : <AnimeWatchlistPage />} />
-            <Route path="/ai" element={mode === 'movies' ? <AiPage /> : <AnimeAiPage />} />
+
+            <Route
+              path="/watchlist"
+              element={mode === 'movies' ? <WatchlistPage /> : <AnimeWatchlistPage />}
+            />
+
+            <Route
+              path="/ai"
+              element={mode === 'movies' ? <AiPage /> : <AnimeAiPage />}
+            />
+
             <Route path="/friends" element={<FriendsPage />} />
-            <Route path="/profile" element={<ProfilePage />} />
+            <Route
+              path="/profile"
+              element={<ProfilePage account={account} />}
+            />
+
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+
           <footer className="mt-14 border-t border-white/[0.07] pt-6 text-center">
-            <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">Credits &amp; attribution</p>
+            <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">
+              Credits &amp; attribution
+            </p>
+
             {mode === 'movies' ? (
               <>
-                <a href="https://www.themoviedb.org" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center"><img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_long_2-9665a76b1ae401a510ec1e0ca40ddcb3b0cfe45f1d51b77a308fea0845885648.svg" alt="The Movie Database (TMDB)" className="h-5 w-auto" /></a>
-                <p className="mt-2 text-[10px] text-zinc-600">This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+                <a
+                  href="https://www.themoviedb.org"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center"
+                >
+                  <img
+                    src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_long_2-9665a76b1ae401a510ec1e0ca40ddcb3b0cfe45f1d51b77a308fea0845885648.svg"
+                    alt="The Movie Database (TMDB)"
+                    className="h-5 w-auto"
+                  />
+                </a>
+                <p className="mt-2 text-[10px] text-zinc-600">
+                  This product uses the TMDB API but is not endorsed or certified by TMDB.
+                </p>
               </>
             ) : (
               <>
-                <a href="https://kitsu.io" target="_blank" rel="noreferrer" className="text-sm font-semibold text-violet-200 hover:text-violet-100">Kitsu</a>
-                <p className="mt-2 text-[10px] text-zinc-600">Anime metadata provided by the Kitsu API. Movie Hunt is an independent student project.</p>
+                <a
+                  href="https://kitsu.io"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm font-semibold text-violet-200 hover:text-violet-100"
+                >
+                  Kitsu
+                </a>
+                <p className="mt-2 text-[10px] text-zinc-600">
+                  Anime metadata provided by the Kitsu API. Movie Hunt is an independent student project.
+                </p>
               </>
             )}
           </footer>
         </main>
-        <MobileNav mode={mode} onModeChange={changeMode} />
+
+        <MobileNav
+          mode={mode}
+          onModeChange={changeMode}
+          signedIn={Boolean(session?.user)}
+          sessionLoading={sessionLoading}
+          account={account}
+        />
       </div>
     </div>
   )
+
 }
 
 function SectionTitle({
@@ -905,17 +1172,20 @@ function DiscoverPage() {
     return () => window.clearTimeout(timeout)
   }, [query])
 
-  function buildMoviesPageUrl(targetPage: number) {
-    if (debouncedQuery) {
-      return `/api/tmdb/search?query=${encodeURIComponent(debouncedQuery)}&page=${targetPage}`
-    }
+  const buildMoviesPageUrl = useCallback(
+    (targetPage: number) => {
+      if (debouncedQuery) {
+        return `/api/tmdb/search?query=${encodeURIComponent(debouncedQuery)}&page=${targetPage}`
+      }
 
-    if (selectedGenre) {
-      return `/api/tmdb/discover?with_genres=${selectedGenre}&page=${targetPage}`
-    }
+      if (selectedGenre) {
+        return `/api/tmdb/discover?with_genres=${selectedGenre}&page=${targetPage}`
+      }
 
-    return `/api/tmdb/popular?page=${targetPage}`
-  }
+      return `/api/tmdb/popular?page=${targetPage}`
+    },
+    [debouncedQuery, selectedGenre],
+  )
 
   const moviesUrl = buildMoviesPageUrl(page)
   const movies = useTmdbData<TmdbMovieList>(moviesUrl)
@@ -950,12 +1220,12 @@ function DiscoverPage() {
       )
     }
   }, [
+    buildMoviesPageUrl,
     movies.data,
     page,
     maxPages,
     query,
     debouncedQuery,
-    selectedGenre,
   ])
 
   function chooseGenre(id: number | null) {
@@ -1676,7 +1946,11 @@ function FriendsPage() {
 }
 
 
-function ProfilePage() {
+function ProfilePage({
+  account,
+}: {
+  account: AccountNavInfo | null
+}) {
   const { data: session, isPending } = authClient.useSession()
   const userId = session?.user?.id
 
@@ -1687,6 +1961,7 @@ function ProfilePage() {
   const [savingPrivacy, setSavingPrivacy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const navigate = useNavigate()
 
   useEffect(() => {
     if (!userId) return
@@ -1884,6 +2159,24 @@ function ProfilePage() {
     })),
   ]
 
+  async function handleSignOut() {
+    try {
+      await authClient.signOut()
+      navigate('/login')
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Could not sign out.',
+      )
+    }
+  }
+
+  function handleCreateAccount() {
+    void authClient.signIn.social({
+      provider: 'google',
+      callbackURL: '/',
+    })
+  }
+
   return (
     <div className="space-y-8">
       <PageIntro
@@ -1925,8 +2218,15 @@ function ProfilePage() {
                 {profile.user.name}
               </h2>
 
-              <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase text-emerald-300">
-                {profile.user.approvalStatus}
+              <span
+                className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase ${account?.isAnonymous
+                  ? 'border-violet-400/20 bg-violet-400/10 text-violet-300'
+                  : profile.user.approvalStatus === 'pending'
+                    ? 'border-amber-400/20 bg-amber-400/10 text-amber-300'
+                    : 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
+                  }`}
+              >
+                {account?.isAnonymous ? 'Guest' : profile.user.approvalStatus}
               </span>
 
               {profile.user.role === 'admin' && (
@@ -1946,6 +2246,34 @@ function ProfilePage() {
               {new Date(profile.user.createdAt).toLocaleDateString()}
             </p>
           </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          {profile.user.role === 'admin' && (
+            <Link
+              to="/admin"
+              className="rounded-xl border border-amber-400/20 px-3.5 py-2.5 text-xs font-semibold text-amber-300 transition hover:bg-amber-400/10"
+            >
+              Admin panel
+            </Link>
+          )}
+
+          {account?.isAnonymous && (
+            <button
+              type="button"
+              onClick={handleCreateAccount}
+              className="rounded-xl bg-amber-400 px-4 py-2.5 text-xs font-bold text-zinc-950 transition hover:bg-amber-300"
+            >
+              Create account
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => void handleSignOut()}
+            className="rounded-xl border border-white/10 px-4 py-2.5 text-xs font-semibold text-zinc-300 transition hover:bg-white/[0.06]"
+          >
+            Sign out
+          </button>
         </div>
       </section>
 
