@@ -18,6 +18,7 @@ import {
 import { Link, useParams } from 'react-router-dom'
 import { authClient } from '../lib/auth-client'
 import { animeScore, animeYear, useAnimeData, type KitsuAnime, type KitsuAnimeList } from '../lib/anime'
+import { FeaturedCarousel } from './FeaturedCarousel'
 
 type AnimeStatus = 'want_to_watch' | 'watching' | 'watched' | 'dropped'
 type AnimeWatchlistEntry = Pick<KitsuAnime,
@@ -98,37 +99,83 @@ function AnimeSectionTitle({ eyebrow, title, action }: { eyebrow: string; title:
   )
 }
 
+
 export function AnimeHomePage() {
-  const popular = useAnimeData<KitsuAnimeList>('/api/anime/popular?page=1')
-  const featured = popular.data?.results?.[0]
+  const popular = useAnimeData<KitsuAnimeList>(
+    '/api/anime/popular?page=1',
+  )
+
+  const featuredSlides = (popular.data?.results ?? [])
+    .slice(0, 10)
+    .map((anime) => ({
+      id: anime.id,
+      title: anime.title,
+      description:
+        anime.synopsis?.trim() ||
+        'Discover this popular anime on Movie Hunt.',
+      image: anime.coverUrl ?? anime.posterUrl,
+      href: `/anime/${anime.id}`,
+      meta: `${animeYear(anime.startDate)} · Kitsu ${animeScore(anime.averageRating)}`,
+    }))
+
   return (
     <div className="space-y-10">
-      <section className="relative isolate overflow-hidden rounded-[26px] border border-violet-300/10 bg-[#15111d] bg-cover bg-center px-6 py-8 sm:px-9 sm:py-10 lg:px-12 lg:py-12" style={featured?.coverUrl ? { backgroundImage: `linear-gradient(90deg, rgba(9,9,11,.97) 8%, rgba(9,9,11,.78) 55%, rgba(9,9,11,.32)), url(${featured.coverUrl})` } : undefined}>
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_78%_42%,rgba(139,92,246,0.24),transparent_42%),linear-gradient(110deg,rgba(12,12,14,0.98)_15%,rgba(21,17,27,0.9)_58%,rgba(16,14,20,0.75))]" />
-        <div className="relative max-w-2xl">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-violet-200/15 bg-violet-200/[0.06] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-violet-200"><Sparkles size={12} /> Anime mode</div>
-          <h1 className="max-w-xl text-4xl font-semibold leading-[1.08] tracking-[-0.045em] text-white sm:text-5xl lg:text-[58px]">Find your next <span className="block text-violet-300">favorite anime.</span></h1>
-          <p className="mt-5 max-w-lg text-sm leading-7 text-zinc-300 sm:text-base">Explore series and films, keep your anime list organized, and get recommendations based on your taste.</p>
-          {featured && <p className="mt-3 text-xs text-zinc-400">Popular right now: <strong className="text-white">{featured.title}</strong></p>}
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link to="/discover" className="inline-flex items-center gap-2 rounded-xl bg-violet-300 px-5 py-3 text-sm font-bold text-zinc-950 transition hover:bg-violet-200">Explore anime <ArrowRight size={16} /></Link>
-            <Link to="/watchlist" className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:bg-white/[0.08]"><Bookmark size={15} /> My anime list</Link>
-          </div>
-        </div>
-      </section>
+      <FeaturedCarousel
+        eyebrow="Popular on Kitsu"
+        slides={featuredSlides}
+        fallbackTitle="Find your next favorite anime."
+        fallbackDescription="Explore anime series and films, organize your anime list, and discover recommendations based on your taste."
+        accent="violet"
+        exploreHref="/discover"
+        exploreLabel="Explore anime"
+        libraryHref="/watchlist"
+        libraryLabel="My anime list"
+      />
+
       <section>
-        <AnimeSectionTitle eyebrow="Most tracked on Kitsu" title="Popular anime" action={<Link to="/discover" className="inline-flex items-center gap-1 text-xs font-semibold text-violet-300 hover:text-violet-200">Browse all <ArrowRight size={14} /></Link>} />
-        <AnimeGrid anime={popular.data?.results ?? []} loading={popular.loading} error={popular.error} emptyMessage="Kitsu did not return catalogue entries. Please try again." />
+        <AnimeSectionTitle
+          eyebrow="Most tracked on Kitsu"
+          title="Popular anime"
+          action={
+            <Link
+              to="/discover"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-violet-300 hover:text-violet-200"
+            >
+              Browse all <ArrowRight size={14} />
+            </Link>
+          }
+        />
+
+        <AnimeGrid
+          anime={popular.data?.results ?? []}
+          loading={popular.loading}
+          error={popular.error}
+          emptyMessage="Kitsu did not return catalogue entries. Please try again."
+        />
       </section>
+
       <section className="rounded-2xl border border-violet-300/10 bg-gradient-to-br from-violet-500/[0.09] to-white/[0.02] p-6">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-300/10 text-violet-200"><Sparkles size={19} /></div>
-        <h2 className="mt-4 text-lg font-semibold text-white">Not sure what to watch next?</h2>
-        <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-500">Describe the kind of anime you want. Movie Hunt will combine your anime list with catalogue matches and Gemini explanations.</p>
-        <Link to="/ai" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-violet-300 px-4 py-2.5 text-xs font-bold text-zinc-950 hover:bg-violet-200">Get anime recommendations <ArrowRight size={14} /></Link>
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-300/10 text-violet-200">
+          <Sparkles size={19} />
+        </div>
+        <h2 className="mt-4 text-lg font-semibold text-white">
+          Not sure what to watch next?
+        </h2>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-500">
+          Describe the kind of anime you want. Movie Hunt will combine your
+          anime list with catalogue matches and Gemini explanations.
+        </p>
+        <Link
+          to="/ai"
+          className="mt-4 inline-flex items-center gap-2 rounded-xl bg-violet-300 px-4 py-2.5 text-xs font-bold text-zinc-950 hover:bg-violet-200"
+        >
+          Get anime recommendations <ArrowRight size={14} />
+        </Link>
       </section>
     </div>
   )
 }
+
 
 
 const ANIME_DISCOVERY_GENRES = [

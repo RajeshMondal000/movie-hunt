@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { authClient } from './lib/auth-client'
+import { FeaturedCarousel } from './components/FeaturedCarousel'
 
 import {
   Link,
@@ -690,78 +691,130 @@ function MovieGrid({
   )
 }
 
+
 function HomePage() {
-  const trending = useTmdbData<TmdbMovieList>('/api/tmdb/trending?time_window=week')
-  const popular = useTmdbData<TmdbMovieList>('/api/tmdb/popular?page=1')
-  const featured = trending.data?.results?.[0]
-  const featuredBackdrop = tmdbImage(featured?.backdrop_path, 'w1280')
+  const trending = useTmdbData<TmdbMovieList>(
+    '/api/tmdb/trending?time_window=week',
+  )
+  const popular = useTmdbData<TmdbMovieList>(
+    '/api/tmdb/popular?page=1',
+  )
+
+  const featuredSlides = (trending.data?.results ?? [])
+    .slice(0, 10)
+    .map((movie) => ({
+      id: String(movie.id),
+      title: movie.title,
+      description:
+        movie.overview?.trim() ||
+        'Discover this trending movie on Movie Hunt.',
+      image:
+        tmdbImage(movie.backdrop_path, 'w1280') ??
+        tmdbImage(movie.poster_path, 'w500'),
+      href: `/movie/${movie.id}`,
+      meta: [
+        movie.release_date?.slice(0, 4),
+        movie.vote_average
+          ? `TMDB ${movie.vote_average.toFixed(1)}/10`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    }))
 
   return (
     <div className="space-y-10">
-      <section
-        className="relative isolate overflow-hidden rounded-[26px] border border-amber-200/10 bg-[#17120e] bg-cover bg-center px-6 py-8 sm:px-9 sm:py-10 lg:px-12 lg:py-12"
-        style={featuredBackdrop ? { backgroundImage: `linear-gradient(90deg, rgba(9,9,11,.97) 8%, rgba(9,9,11,.78) 55%, rgba(9,9,11,.25)), url(${featuredBackdrop})` } : undefined}
-      >
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_78%_42%,rgba(190,112,43,0.25),transparent_42%),linear-gradient(110deg,rgba(12,12,14,0.98)_15%,rgba(21,17,15,0.9)_58%,rgba(16,14,14,0.75))]" />
-        <div className="relative max-w-2xl">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-200/15 bg-amber-200/[0.06] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-200">
-            <Sparkles size={12} /> This week on TMDB
-          </div>
-          <h1 className="max-w-xl text-4xl font-semibold leading-[1.08] tracking-[-0.045em] text-white sm:text-5xl lg:text-[58px]">
-            Find your next <span className="block text-amber-300">favorite film.</span>
-          </h1>
-          {featured ? (
-            <p className="mt-5 max-w-lg text-sm leading-7 text-zinc-300 sm:text-base">
-              Trending now: <strong className="text-white">{featured.title}</strong>. Discover what people are watching and find your next movie night pick.
-            </p>
-          ) : (
-            <p className="mt-5 max-w-lg text-sm leading-7 text-zinc-400 sm:text-base">
-              Discover trending films, explore genres, and find something worth watching with your movie club.
-            </p>
-          )}
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link to="/discover" className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-zinc-950 transition hover:bg-amber-300">
-              Explore movies <ArrowRight size={16} />
-            </Link>
-            <Link to="/watchlist" className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:bg-white/[0.08]">
-              <Bookmark size={15} /> My watchlist
-            </Link>
-          </div>
-        </div>
-        <div className="relative mt-9 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500 sm:mt-12">
-          <span className="h-px w-7 bg-amber-400/70" /> Discover · Track · Recommend · Share
-        </div>
-      </section>
+      <FeaturedCarousel
+        eyebrow="This week on TMDB"
+        slides={featuredSlides}
+        fallbackTitle="Find your next favorite film."
+        fallbackDescription="Discover trending films, explore genres, and find something worth watching with your movie club."
+        accent="amber"
+        exploreHref="/discover"
+        exploreLabel="Explore movies"
+        libraryHref="/watchlist"
+        libraryLabel="My watchlist"
+      />
 
       <section>
         <SectionTitle
           eyebrow="Popular right now"
           title="Trending this week"
-          action={<Link to="/discover" className="inline-flex items-center gap-1 text-xs font-semibold text-amber-300 hover:text-amber-200">Browse all <ArrowUpRight size={14} /></Link>}
+          action={
+            <Link
+              to="/discover"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-amber-300 hover:text-amber-200"
+            >
+              Browse all <ArrowUpRight size={14} />
+            </Link>
+          }
         />
-        <MovieGrid movies={trending.data?.results ?? []} loading={trending.loading} error={trending.error} />
+        <MovieGrid
+          movies={trending.data?.results ?? []}
+          loading={trending.loading}
+          error={trending.error}
+        />
       </section>
 
       <section>
-        <SectionTitle eyebrow="Discover something new" title="Popular movies" />
-        <MovieGrid movies={popular.data?.results ?? []} loading={popular.loading} error={popular.error} />
+        <SectionTitle
+          eyebrow="Discover something new"
+          title="Popular movies"
+        />
+        <MovieGrid
+          movies={popular.data?.results ?? []}
+          loading={popular.loading}
+          error={popular.error}
+        />
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
-        <Link to="/ai" className="group rounded-2xl border border-violet-300/10 bg-gradient-to-br from-violet-500/[0.09] to-white/[0.02] p-6 transition hover:border-violet-300/20">
-          <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl bg-violet-300/10 text-violet-200"><Sparkles size={19} /></div>
-          <div className="flex items-center justify-between"><h3 className="font-semibold text-white">Not sure what to watch?</h3><ArrowUpRight size={17} className="text-zinc-500 transition group-hover:text-violet-200" /></div>
-          <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">Tell the AI what mood you're in and get movie ideas that fit.</p>
+        <Link
+          to="/ai"
+          className="group rounded-2xl border border-violet-300/10 bg-gradient-to-br from-violet-500/[0.09] to-white/[0.02] p-6 transition hover:border-violet-300/20"
+        >
+          <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl bg-violet-300/10 text-violet-200">
+            <Sparkles size={19} />
+          </div>
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-white">
+              Not sure what to watch?
+            </h3>
+            <ArrowUpRight
+              size={17}
+              className="text-zinc-500 transition group-hover:text-violet-200"
+            />
+          </div>
+          <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">
+            Tell the AI what mood you're in and get movie ideas that fit.
+          </p>
         </Link>
-        <Link to="/friends" className="group rounded-2xl border border-amber-300/10 bg-gradient-to-br from-amber-500/[0.08] to-white/[0.02] p-6 transition hover:border-amber-300/20">
-          <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-300/10 text-amber-200"><Users size={19} /></div>
-          <div className="flex items-center justify-between"><h3 className="font-semibold text-white">Movies are better together</h3><ArrowUpRight size={17} className="text-zinc-500 transition group-hover:text-amber-200" /></div>
-          <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">Build your private club and see what your friends recommend.</p>
+
+        <Link
+          to="/friends"
+          className="group rounded-2xl border border-amber-300/10 bg-gradient-to-br from-amber-500/[0.08] to-white/[0.02] p-6 transition hover:border-amber-300/20"
+        >
+          <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-300/10 text-amber-200">
+            <Users size={19} />
+          </div>
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-white">
+              Movies are better together
+            </h3>
+            <ArrowUpRight
+              size={17}
+              className="text-zinc-500 transition group-hover:text-amber-200"
+            />
+          </div>
+          <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">
+            Build your private club and see what your friends recommend.
+          </p>
         </Link>
       </section>
     </div>
   )
 }
+
 
 function DiscoverPage() {
   const [query, setQuery] = useState('')
