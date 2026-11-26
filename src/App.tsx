@@ -692,7 +692,7 @@ function MovieGrid({
 
 function HomePage() {
   const trending = useTmdbData<TmdbMovieList>('/api/tmdb/trending?time_window=week')
-  const popular = useTmdbData<TmdbMovieList>('/api/tmdb/popular')
+  const popular = useTmdbData<TmdbMovieList>('/api/tmdb/popular?page=1')
   const featured = trending.data?.results?.[0]
   const featuredBackdrop = tmdbImage(featured?.backdrop_path, 'w1280')
 

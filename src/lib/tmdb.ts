@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCachedApiData } from './request-cache'
 
 export type TmdbGenre = {
   id: number
@@ -66,56 +66,8 @@ export function tmdbImage(path: string | null | undefined, size = 'w500') {
   return path ? `https://image.tmdb.org/t/p/${size}${path}` : null
 }
 
-type RequestState<T> = {
-  url: string | null
-  data: T | null
-  error: string
-  loading: boolean
-}
 
 /** Fetches a same-origin Worker API endpoint and ignores stale requests. */
 export function useTmdbData<T>(url: string | null) {
-  const [state, setState] = useState<RequestState<T>>({
-    url: null,
-    data: null,
-    error: '',
-    loading: true,
-  })
-
-  useEffect(() => {
-    if (!url) return
-
-    const controller = new AbortController()
-
-    fetch(url, { signal: controller.signal })
-      .then(async (response) => {
-        const data = await response.json() as T & { message?: string; error?: string }
-        if (!response.ok) {
-          throw new Error(data.message ?? data.error ?? `Request failed (${response.status})`)
-        }
-        return data
-      })
-      .then((data) => {
-        setState({ url, data, error: '', loading: false })
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return
-        setState({
-          url,
-          data: null,
-          error: error instanceof Error ? error.message : 'Could not load movies.',
-          loading: false,
-        })
-      })
-
-    return () => controller.abort()
-  }, [url])
-
-  const isCurrentRequest = state.url === url
-
-  return {
-    data: isCurrentRequest ? state.data : null,
-    error: isCurrentRequest ? state.error : '',
-    loading: Boolean(url) && (!isCurrentRequest || state.loading),
-  }
+  return useCachedApiData<T>(url)
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCachedApiData } from './request-cache'
 
 export type KitsuAnime = {
   id: string
@@ -27,49 +27,10 @@ export type KitsuAnimeList = {
   totalPages: number
 }
 
-type AnimeDataState<T> = {
-  url: string | null
-  data: T | null
-  error: string
-}
+
 
 export function useAnimeData<T>(url: string | null) {
-  const [state, setState] = useState<AnimeDataState<T>>({
-    url: null,
-    data: null,
-    error: '',
-  })
-
-  useEffect(() => {
-    if (!url) return
-    const controller = new AbortController()
-
-    fetch(url, { signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json() as T & { message?: string; error?: string }
-        if (!response.ok) {
-          throw new Error(payload.message ?? payload.error ?? `Request failed (${response.status})`)
-        }
-        return payload as T
-      })
-      .then((data) => setState({ url, data, error: '' }))
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return
-        setState({
-          url,
-          data: null,
-          error: error instanceof Error ? error.message : 'Could not load anime data.',
-        })
-      })
-
-    return () => controller.abort()
-  }, [url])
-
-  return {
-    data: state.url === url ? state.data : null,
-    error: state.url === url ? state.error : '',
-    loading: Boolean(url) && state.url !== url,
-  }
+  return useCachedApiData<T>(url)
 }
 
 export function animeYear(date: string | null | undefined): string {
