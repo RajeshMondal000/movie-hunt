@@ -1164,13 +1164,23 @@ app.get('/api/tmdb/search', async (c) => {
     )
   }
 
+  const year = (c.req.query('year') ?? '').trim()
+
+  if (year && !/^\d{4}$/.test(year)) {
+    return c.json(
+      { error: 'invalid_year', message: 'Year must be a four-digit number.' },
+      400,
+    )
+  }
+
   try {
     const data = await tmdbRequest<TmdbList>(c.env, '/search/movie', {
       query,
       page: String(validPage(c.req.query('page'))),
       language: c.req.query('language') ?? 'en-US',
-      include_adult: 'false',
+      include_adult: 'true',
       region: c.req.query('region') ?? 'IN',
+      ...(year ? { year } : {}),
     })
     queueMovieCache(c, data.results ?? [])
     return c.json(data)
@@ -1178,28 +1188,82 @@ app.get('/api/tmdb/search', async (c) => {
     return tmdbErrorResponse(c, error)
   }
 })
+
+
+const TMDB_DISCOVERY_SORTS = new Set([
+  'popularity.desc',
+  'popularity.asc',
+  'vote_average.desc',
+  'vote_average.asc',
+  'primary_release_date.desc',
+  'primary_release_date.asc',
+  'title.asc',
+  'title.desc',
+  'vote_count.desc',
+  'vote_count.asc',
+])
 
 app.get('/api/tmdb/discover', async (c) => {
   const genre = c.req.query('with_genres') ?? ''
+  const sortBy = c.req.query('sort_by') ?? 'popularity.desc'
+  const year = (c.req.query('primary_release_year') ?? '').trim()
+  const minRatingRaw = (c.req.query('vote_average.gte') ?? '').trim()
+
   if (genre && !/^\d+(?:[,|]\d+)*$/.test(genre)) {
-    return c.json({ error: 'invalid_genre', message: 'with_genres must contain TMDB genre IDs.' }, 400)
+    return c.json(
+      { error: 'invalid_genre', message: 'with_genres must contain TMDB genre IDs.' },
+      400,
+    )
+  }
+
+  if (!TMDB_DISCOVERY_SORTS.has(sortBy)) {
+    return c.json({ error: 'invalid_sort' }, 400)
+  }
+
+  if (year && !/^\d{4}$/.test(year)) {
+    return c.json({ error: 'invalid_year' }, 400)
+  }
+
+  const minRating = minRatingRaw === '' ? null : Number(minRatingRaw)
+
+  if (
+    minRating !== null &&
+    (!Number.isFinite(minRating) || minRating < 0 || minRating > 10)
+  ) {
+    return c.json({ error: 'invalid_rating' }, 400)
   }
 
   try {
-    const data = await tmdbRequest<TmdbList>(c.env, '/discover/movie', {
+    const params: Record<string, string> = {
       page: String(validPage(c.req.query('page'))),
       language: c.req.query('language') ?? 'en-US',
       region: c.req.query('region') ?? 'IN',
-      include_adult: 'false',
-      sort_by: 'popularity.desc',
-      ...(genre ? { with_genres: genre } : {}),
-    })
+      include_adult: 'true',
+      sort_by: sortBy,
+    }
+
+    if (genre) params.with_genres = genre
+    if (year) params.primary_release_year = year
+    if (minRating !== null) params['vote_average.gte'] = String(minRating)
+
+    // Avoid very low-vote titles dominating the highest-rated results.
+    if (sortBy === 'vote_average.desc') {
+      params['vote_count.gte'] = '100'
+    }
+
+    const data = await tmdbRequest<TmdbList>(
+      c.env,
+      '/discover/movie',
+      params,
+    )
+
     queueMovieCache(c, data.results ?? [])
     return c.json(data)
   } catch (error) {
     return tmdbErrorResponse(c, error)
   }
 })
+
 
 app.get('/api/tmdb/genres', async (c) => {
   try {
@@ -1925,7 +1989,7 @@ app.post('/api/recommendations', async (c) => {
       page: '1',
       language: 'en-US',
       region: 'IN',
-      include_adult: 'false',
+      include_adult: 'true',
     }
     const requests: Promise<TmdbList>[] = [
       tmdbRequest<TmdbList>(c.env, '/trending/movie/week', commonParams),
@@ -2329,33 +2393,50 @@ app.delete('/api/reviews/:tmdbId', async (c) => {
 
 // Kitsu-backed anime discovery. Public catalogue pages are not copied wholesale into D1;
 // only metadata for anime explicitly added to a member's library is cached.
+const KITSU_ANIME_SORTS = new Set([
+  '-userCount',
+  '-averageRating',
+  '-startDate',
+  'startDate',
+  'canonicalTitle',
+])
+
+const KITSU_ANIME_STATUSES = new Set([
+  'current',
+  'finished',
+  'upcoming',
+])
 
 app.get('/api/anime/popular', async (c) => {
   const page = validPage(c.req.query('page'))
   const genre = (c.req.query('genre') ?? '').trim().toLowerCase()
+  const sortBy = c.req.query('sort_by') ?? '-userCount'
+  const status = (c.req.query('status') ?? '').trim().toLowerCase()
 
   if (genre && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(genre)) {
     return c.json({ error: 'invalid_genre' }, 400)
   }
 
+  if (!KITSU_ANIME_SORTS.has(sortBy)) {
+    return c.json({ error: 'invalid_sort' }, 400)
+  }
+
+  if (status && !KITSU_ANIME_STATUSES.has(status)) {
+    return c.json({ error: 'invalid_status' }, 400)
+  }
+
   try {
     const params: Record<string, string> = {
-      sort: '-userCount',
+      sort: sortBy,
       include: 'genres',
       'page[limit]': String(KITSU_PAGE_SIZE),
       'page[offset]': String((page - 1) * KITSU_PAGE_SIZE),
     }
 
-    // Filter the complete Kitsu catalogue before pagination.
-    if (genre) {
-      params['filter[genres]'] = genre
-    }
+    if (genre) params['filter[genres]'] = genre
+    if (status) params['filter[status]'] = status
 
-    const payload = await kitsuRequest<KitsuPayload>(
-      '/anime',
-      params,
-    )
-
+    const payload = await kitsuRequest<KitsuPayload>('/anime', params)
     const results = normalizeKitsuPayload(payload)
     const totalResults = Number(payload.meta?.count ?? results.length)
 
@@ -2363,11 +2444,9 @@ app.get('/api/anime/popular', async (c) => {
       page,
       results,
       totalResults,
-      totalPages: Math.max(
-        1,
-        Math.ceil(totalResults / KITSU_PAGE_SIZE),
-      ),
+      totalPages: Math.max(1, Math.ceil(totalResults / KITSU_PAGE_SIZE)),
       appliedGenre: genre || null,
+      appliedStatus: status || null,
     })
   } catch (error) {
     return kitsuErrorResponse(c, error)
@@ -2379,6 +2458,8 @@ app.get('/api/anime/popular', async (c) => {
 app.get('/api/anime/search', async (c) => {
   const query = (c.req.query('query') ?? '').trim()
   const genre = (c.req.query('genre') ?? '').trim().toLowerCase()
+  const sortBy = c.req.query('sort_by') ?? '-userCount'
+  const status = (c.req.query('status') ?? '').trim().toLowerCase()
 
   if (!query || query.length > 100) {
     return c.json({
@@ -2391,26 +2472,29 @@ app.get('/api/anime/search', async (c) => {
     return c.json({ error: 'invalid_genre' }, 400)
   }
 
+  if (!KITSU_ANIME_SORTS.has(sortBy)) {
+    return c.json({ error: 'invalid_sort' }, 400)
+  }
+
+  if (status && !KITSU_ANIME_STATUSES.has(status)) {
+    return c.json({ error: 'invalid_status' }, 400)
+  }
+
   const page = validPage(c.req.query('page'))
 
   try {
     const params: Record<string, string> = {
       'filter[text]': query,
+      sort: sortBy,
       include: 'genres',
       'page[limit]': String(KITSU_PAGE_SIZE),
       'page[offset]': String((page - 1) * KITSU_PAGE_SIZE),
     }
 
-    // Text search and genre filtering are applied together.
-    if (genre) {
-      params['filter[genres]'] = genre
-    }
+    if (genre) params['filter[genres]'] = genre
+    if (status) params['filter[status]'] = status
 
-    const payload = await kitsuRequest<KitsuPayload>(
-      '/anime',
-      params,
-    )
-
+    const payload = await kitsuRequest<KitsuPayload>('/anime', params)
     const results = normalizeKitsuPayload(payload)
     const totalResults = Number(payload.meta?.count ?? results.length)
 
@@ -2418,11 +2502,9 @@ app.get('/api/anime/search', async (c) => {
       page,
       results,
       totalResults,
-      totalPages: Math.max(
-        1,
-        Math.ceil(totalResults / KITSU_PAGE_SIZE),
-      ),
+      totalPages: Math.max(1, Math.ceil(totalResults / KITSU_PAGE_SIZE)),
       appliedGenre: genre || null,
+      appliedStatus: status || null,
     })
   } catch (error) {
     return kitsuErrorResponse(c, error)

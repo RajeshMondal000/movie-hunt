@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useStoredDiscoveryState } from '../lib/discovery-state'
 import {
   ArrowLeft,
   ArrowRight,
@@ -127,7 +128,7 @@ export function AnimeHomePage() {
     }))
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-5">
       <FeaturedCarousel
         eyebrow="Popular on Kitsu"
         slides={featuredSlides}
@@ -253,12 +254,39 @@ function toKitsuGenreSlug(genre: string): string {
     .replace(/^-|-$/g, '')
 }
 
+type AnimeDiscoveryPreferences = {
+  query: string
+  selectedGenre: string | null
+  page: number
+  sortBy: string
+  status: string
+}
+
+const ANIME_DISCOVERY_DEFAULTS: AnimeDiscoveryPreferences = {
+  query: '',
+  selectedGenre: null,
+  page: 1,
+  sortBy: '-userCount',
+  status: '',
+}
+
 
 export function AnimeDiscoverPage() {
-  const [query, setQuery] = useState('')
-  const [debouncedQuery, setDebouncedQuery] = useState('')
-  const [selectedGenre, setSelectedGenre] = useState<string | null>(null)
-  const [page, setPage] = useState(1)
+  const [discovery, setDiscovery] =
+    useStoredDiscoveryState<AnimeDiscoveryPreferences>(
+      'movie-hunt-anime-discovery',
+      ANIME_DISCOVERY_DEFAULTS,
+    )
+
+  const {
+    query,
+    selectedGenre,
+    page,
+    sortBy,
+    status,
+  } = discovery
+
+  const [debouncedQuery, setDebouncedQuery] = useState(query)
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -269,17 +297,56 @@ export function AnimeDiscoverPage() {
     return () => window.clearTimeout(timer)
   }, [query])
 
+  const setPage = useCallback(
+    (nextPage: number | ((current: number) => number)) => {
+      setDiscovery((current) => ({
+        ...current,
+        page:
+          typeof nextPage === 'function'
+            ? nextPage(current.page)
+            : nextPage,
+      }))
+    },
+    [setDiscovery],
+  )
+
+  function updateFilters(
+    changes: Partial<AnimeDiscoveryPreferences>,
+  ) {
+    setDiscovery((current) => ({
+      ...current,
+      ...changes,
+      page: 1,
+    }))
+  }
+
   const buildAnimePageUrl = useCallback(
     (targetPage: number) => {
-      const genreParam = selectedGenre
-        ? `&genre=${encodeURIComponent(toKitsuGenreSlug(selectedGenre))}`
-        : ''
+      const params = new URLSearchParams({
+        page: String(targetPage),
+      })
 
-      return debouncedQuery
-        ? `/api/anime/search?query=${encodeURIComponent(debouncedQuery)}&page=${targetPage}${genreParam}`
-        : `/api/anime/popular?page=${targetPage}${genreParam}`
+      if (sortBy !== '-userCount' || debouncedQuery) {
+        params.set('sort_by', sortBy)
+      }
+
+      if (status) params.set('status', status)
+
+      if (selectedGenre) {
+        params.set('genre', toKitsuGenreSlug(selectedGenre))
+      }
+
+      if (debouncedQuery) {
+        params.set('query', debouncedQuery)
+      }
+
+      const endpoint = debouncedQuery
+        ? '/api/anime/search'
+        : '/api/anime/popular'
+
+      return `${endpoint}?${params.toString()}`
     },
-    [debouncedQuery, selectedGenre],
+    [debouncedQuery, selectedGenre, sortBy, status],
   )
 
   const url = buildAnimePageUrl(page)
@@ -290,6 +357,7 @@ export function AnimeDiscoverPage() {
     500,
   )
 
+  // Prefetch two pages in both directions, preserving all filters.
   useEffect(() => {
     if (
       !data.data ||
@@ -324,8 +392,11 @@ export function AnimeDiscoverPage() {
   ])
 
   function selectGenre(genre: string | null) {
-    setSelectedGenre(genre)
-    setPage(1)
+    setDiscovery((current) => ({
+      ...current,
+      selectedGenre: genre,
+      page: 1,
+    }))
   }
 
   const anime = data.data?.results ?? []
@@ -335,19 +406,22 @@ export function AnimeDiscoverPage() {
       <AnimePageIntro
         eyebrow="Kitsu anime catalogue"
         title="Find your next series."
-        description="Search anime titles and explore the catalogue using genre filters. Filters are applied across Kitsu's catalogue, not just the current page."
+        description="Search anime titles and explore the catalogue by genre, popularity, rating and airing status."
       />
 
       {/* Search */}
-      <div className="mb-6 flex max-w-2xl items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3">
+      <div className="mb-5 flex max-w-2xl items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3">
         <Search size={17} className="shrink-0 text-zinc-500" />
 
         <input
           value={query}
-          onChange={(event) => {
-            setQuery(event.target.value)
-            setPage(1)
-          }}
+          onChange={(event) =>
+            setDiscovery((current) => ({
+              ...current,
+              query: event.target.value,
+              page: 1,
+            }))
+          }
           placeholder="Search anime titles..."
           className="w-full bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
         />
@@ -355,15 +429,60 @@ export function AnimeDiscoverPage() {
         {query && (
           <button
             type="button"
-            onClick={() => {
-              setQuery('')
-              setPage(1)
-            }}
+            onClick={() =>
+              setDiscovery((current) => ({
+                ...current,
+                query: '',
+                page: 1,
+              }))
+            }
             className="text-xs text-zinc-500 hover:text-white"
           >
             Clear
           </button>
         )}
+      </div>
+
+      {/* Sorting and status */}
+      <div className="mb-7 grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+            Sort by
+          </span>
+
+          <select
+            value={sortBy}
+            onChange={(event) =>
+              updateFilters({ sortBy: event.target.value })
+            }
+            className="w-full rounded-xl border border-white/10 bg-[#151518] px-3 py-3 text-xs text-zinc-200 outline-none focus:border-violet-300/40"
+          >
+            <option value="-userCount">Most popular</option>
+            <option value="-averageRating">Highest rated</option>
+            <option value="-startDate">Newest releases</option>
+            <option value="startDate">Oldest releases</option>
+            <option value="canonicalTitle">Title A–Z</option>
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+            Airing status
+          </span>
+
+          <select
+            value={status}
+            onChange={(event) =>
+              updateFilters({ status: event.target.value })
+            }
+            className="w-full rounded-xl border border-white/10 bg-[#151518] px-3 py-3 text-xs text-zinc-200 outline-none focus:border-violet-300/40"
+          >
+            <option value="">All statuses</option>
+            <option value="current">Currently airing</option>
+            <option value="upcoming">Upcoming</option>
+            <option value="finished">Finished</option>
+          </select>
+        </label>
       </div>
 
       {/* Genre filters */}
@@ -379,7 +498,7 @@ export function AnimeDiscoverPage() {
               onClick={() => selectGenre(null)}
               className="text-xs text-violet-300 hover:text-violet-200"
             >
-              Clear filter
+              Clear genre
             </button>
           )}
         </div>
@@ -390,8 +509,8 @@ export function AnimeDiscoverPage() {
             onClick={() => selectGenre(null)}
             aria-pressed={selectedGenre === null}
             className={`rounded-full border px-3 py-2 text-xs transition ${selectedGenre === null
-              ? 'border-violet-300/30 bg-violet-300/10 text-violet-200'
-              : 'border-white/10 text-zinc-400 hover:bg-white/5'
+                ? 'border-violet-300/30 bg-violet-300/10 text-violet-200'
+                : 'border-white/10 text-zinc-400 hover:bg-white/5'
               }`}
           >
             All genres
@@ -404,8 +523,8 @@ export function AnimeDiscoverPage() {
               aria-pressed={selectedGenre === genre}
               onClick={() => selectGenre(genre)}
               className={`rounded-full border px-3 py-2 text-xs transition ${selectedGenre === genre
-                ? 'border-violet-300/30 bg-violet-300/10 text-violet-200'
-                : 'border-white/10 text-zinc-400 hover:bg-white/5'
+                  ? 'border-violet-300/30 bg-violet-300/10 text-violet-200'
+                  : 'border-white/10 text-zinc-400 hover:bg-white/5'
                 }`}
             >
               {genre}
@@ -414,7 +533,7 @@ export function AnimeDiscoverPage() {
         </div>
       </div>
 
-      {/* Results heading */}
+      {/* Results */}
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-zinc-300">
           {selectedGenre
@@ -429,7 +548,6 @@ export function AnimeDiscoverPage() {
         </span>
       </div>
 
-      {/* No local filtering: Kitsu already returns filtered results. */}
       <AnimeGrid
         anime={anime}
         loading={
@@ -439,19 +557,17 @@ export function AnimeDiscoverPage() {
         error={data.error}
         emptyMessage={
           selectedGenre
-            ? `No anime found in ${selectedGenre}. Try another genre or clear the filter.`
-            : 'Try another title or clear your search.'
+            ? `No anime found in ${selectedGenre}. Try another genre or clear the filters.`
+            : 'No anime matches these filters. Try changing your selection.'
         }
       />
-
-      {/* Pagination uses the filtered total count. */}
 
       {data.data && maxPages > 1 && (
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <button
             disabled={page <= 1 || data.loading}
             onClick={() => setPage((current) => Math.max(1, current - 1))}
-            className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 disabled:opacity-30"
+            className="cursor-pointer rounded-lg border border-white/10 bg-white/[0.02] px-4 py-2 text-xs font-medium text-zinc-300 transition-all duration-150 enabled:hover:-translate-y-0.5 enabled:hover:border-violet-400/50 enabled:hover:bg-violet-500/10 enabled:hover:text-white enabled:active:translate-y-0 enabled:active:scale-95 enabled:active:bg-violet-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60 disabled:cursor-not-allowed disabled:opacity-30"
           >
             Previous
           </button>
@@ -460,6 +576,14 @@ export function AnimeDiscoverPage() {
             Page {page} of {maxPages}
           </span>
 
+          <button
+            disabled={page >= maxPages || data.loading}
+            onClick={() => setPage((current) => Math.min(maxPages, current + 1))}
+            className="cursor-pointer rounded-lg border border-white/10 bg-white/[0.02] px-4 py-2 text-xs font-medium text-zinc-300 transition-all duration-150 enabled:hover:-translate-y-0.5 enabled:hover:border-violet-400/50 enabled:hover:bg-violet-500/10 enabled:hover:text-white enabled:active:translate-y-0 enabled:active:scale-95 enabled:active:bg-violet-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            Next
+          </button>
+
           <PageJump
             key={`${page}-${query}-${selectedGenre ?? 'all'}`}
             page={page}
@@ -467,24 +591,12 @@ export function AnimeDiscoverPage() {
             onGo={setPage}
             accent="violet"
           />
-
-          <button
-            disabled={page >= maxPages || data.loading}
-            onClick={() => setPage((current) => Math.min(maxPages, current + 1))}
-            className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 disabled:opacity-30"
-          >
-            Next
-          </button>
         </div>
       )}
-
-
-      <p className="mt-5 text-[10px] text-zinc-600">
-        Genre filtering, search and pagination are handled by Kitsu across the catalogue.
-      </p>
     </div>
   )
 }
+
 
 
 function AnimeLibraryControls({ anime }: { anime: KitsuAnime }) {
@@ -713,7 +825,7 @@ export function AnimeAiPage() {
 
   return (
     <div>
-      <AnimePageIntro eyebrow="Anime recommendation assistant" title="What should you watch next?" description="The anime recommender uses your Kitsu catalogue preferences and private D1 watchlist, then Gemini adds explanations when available." />
+      <AnimePageIntro eyebrow="Anime recommendation assistant" title="What should you watch next?" description="The anime recommender uses your Kitsu catalogue preferences and watchlist, then Gemini adds explanations when available." />
       <div className="rounded-2xl border border-violet-300/10 bg-gradient-to-br from-violet-500/[0.10] via-white/[0.025] to-transparent p-5 sm:p-7">
         <label htmlFor="anime-prompt" className="text-sm font-semibold text-white">Describe the anime you're looking for</label>
         <textarea id="anime-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={240} rows={3} placeholder="Example: A tense psychological thriller with a strong story…" className="mt-3 w-full resize-y rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm leading-6 text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-violet-300/40" />

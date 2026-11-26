@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useStoredDiscoveryState } from './lib/discovery-state'
 import {
   ArrowRight,
   ArrowLeft,
@@ -182,6 +183,12 @@ function ProfileNavLink({
   account: AccountNavInfo | null
   mobile?: boolean
 }) {
+  const isSignIn = !sessionLoading && !signedIn
+  const isYellowBadge =
+    !sessionLoading &&
+    signedIn &&
+    (account?.isAnonymous || account?.approvalStatus === 'pending')
+
   const statusLabel = sessionLoading
     ? ''
     : !signedIn
@@ -192,17 +199,44 @@ function ProfileNavLink({
           ? 'Pending'
           : ''
 
-  return (
-    <NavLink
-      to={signedIn ? '/profile' : '/login'}
-      className={({ isActive }) =>
-        mobile
-          ? `flex min-w-0 flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[9px] font-medium ${isActive
+  if (mobile) {
+    return (
+      <NavLink
+        to={signedIn ? '/profile' : '/login'}
+        className={({ isActive }) =>
+          `flex min-w-0 flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[9px] font-medium ${isActive
             ? mode === 'movies'
               ? 'text-amber-300'
               : 'text-violet-200'
             : 'text-zinc-500'
           }`
+        }
+      >
+        <UserRound size={18} />
+        <span className="truncate">Profile</span>
+
+        {statusLabel && (
+          <span
+            className={`max-w-full truncate font-bold uppercase tracking-wide ${isSignIn
+                ? 'text-[8.5px] text-red-400 drop-shadow-[0_0_6px_rgba(248,113,113,0.85)]'
+                : isYellowBadge
+                  ? 'text-[7px] text-amber-300 drop-shadow-[0_0_6px_rgba(251,191,36,0.75)]'
+                  : 'text-[7px] text-zinc-500'
+              }`}
+          >
+            {statusLabel}
+          </span>
+        )}
+      </NavLink>
+    )
+  }
+
+  return (
+    <NavLink
+      to={signedIn ? '/profile' : '/login'}
+      className={({ isActive }) =>
+        isSignIn
+          ? 'group relative flex overflow-hidden rounded-xl p-[1px] shadow-[0_0_16px_rgba(239,68,68,0.22)] transition-shadow duration-300 hover:shadow-[0_0_22px_rgba(239,68,68,0.4)]'
           : `group flex items-center gap-3 rounded-xl px-3 py-3 text-[13px] font-medium transition ${isActive
             ? mode === 'movies'
               ? 'bg-amber-400/10 text-amber-300 ring-1 ring-amber-300/10'
@@ -211,19 +245,43 @@ function ProfileNavLink({
           }`
       }
     >
-      <UserRound size={17} strokeWidth={1.8} />
-      <span>Profile</span>
+      {({ isActive }) => (
+        <>
+          {isSignIn && (
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute left-1/2 top-1/2 h-[220px] w-[220px] -translate-x-1/2 -translate-y-1/2 animate-[spin_3s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,transparent_0%,transparent_72%,#ef4444_90%,#fecaca_100%)]"
+            />
+          )}
 
-      {statusLabel && (
-        <span
-          className={
-            mobile
-              ? 'max-w-full truncate text-[7px] font-bold uppercase tracking-wide text-zinc-500'
-              : 'ml-auto rounded-md border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-zinc-400'
-          }
-        >
-          {statusLabel}
-        </span>
+          <span
+            className={
+              isSignIn
+                ? `relative flex w-full items-center gap-3 rounded-[11px] px-3 py-3 text-[13px] font-medium transition ${isActive
+                  ? 'bg-[#1a1214] text-red-200'
+                  : 'bg-[#111113] text-zinc-300 group-hover:bg-[#171214] group-hover:text-white'
+                }`
+                : 'contents'
+            }
+          >
+            <UserRound size={17} strokeWidth={1.8} />
+            <span>Profile</span>
+
+            {statusLabel && (
+              <span
+                className={
+                  isSignIn
+                    ? 'ml-auto rounded-md border border-red-400/70 bg-red-500/15 px-2 py-0.5 text-[12px] font-bold uppercase tracking-wide text-red-200 shadow-[0_0_12px_rgba(248,113,113,0.5),inset_0_0_6px_rgba(248,113,113,0.25)]'
+                    : isYellowBadge
+                      ? 'ml-auto rounded-md border border-amber-400/60 bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-200 shadow-[0_0_12px_rgba(251,191,36,0.45),inset_0_0_6px_rgba(251,191,36,0.25)]'
+                      : 'ml-auto rounded-md border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-zinc-400'
+                }
+              >
+                {statusLabel}
+              </span>
+            )}
+          </span>
+        </>
       )}
     </NavLink>
   )
@@ -676,8 +734,60 @@ function AdminPage() {
   )
 }
 
+const LIBRARY_ROUTE_STORAGE_KEY = 'movie-hunt-library-routes'
+
+type LibraryRouteMap = Record<MediaMode, string>
+
+function normalizeInternalRoute(value: unknown): string {
+  if (
+    typeof value !== 'string' ||
+    !value.startsWith('/') ||
+    value.startsWith('//')
+  ) {
+    return '/'
+  }
+
+  return value
+}
+
+function readLibraryRoutes(): LibraryRouteMap {
+  const defaults: LibraryRouteMap = {
+    movies: '/',
+    anime: '/',
+  }
+
+  try {
+    const saved = localStorage.getItem(
+      LIBRARY_ROUTE_STORAGE_KEY,
+    )
+
+    if (!saved) return defaults
+
+    const parsed = JSON.parse(saved) as Partial<LibraryRouteMap>
+
+    return {
+      movies: normalizeInternalRoute(parsed.movies),
+      anime: normalizeInternalRoute(parsed.anime),
+    }
+  } catch {
+    return defaults
+  }
+}
+
+function writeLibraryRoutes(routes: LibraryRouteMap) {
+  try {
+    localStorage.setItem(
+      LIBRARY_ROUTE_STORAGE_KEY,
+      JSON.stringify(routes),
+    )
+  } catch {
+    // Navigation remains functional when storage is unavailable.
+  }
+}
+
 function AppShell() {
   const navigate = useNavigate()
+
   const [mode, setMode] = useState<MediaMode>(() => {
     if (typeof window === 'undefined') return 'movies'
     return window.localStorage.getItem('movie-hunt-mode') === 'anime' ? 'anime' : 'movies'
@@ -694,6 +804,11 @@ function AppShell() {
   } | null>(null)
 
   const location = useLocation()
+  const currentRoute = `${location.pathname}${location.search}${location.hash}`
+  const pendingLibraryNavigation = useRef<{
+    mode: MediaMode
+    route: string
+  } | null>(null)
 
   const pageTitle =
     location.pathname === '/'
@@ -715,6 +830,24 @@ function AppShell() {
                     : location.pathname === '/login'
                       ? 'Sign in'
                       : 'Movie Hunt'
+
+  useEffect(() => {
+    const pending = pendingLibraryNavigation.current
+
+    // During a library switch, wait until React Router reaches the
+    // destination route before persisting the new library's location.
+    if (pending) {
+      if (pending.mode !== mode || pending.route !== currentRoute) {
+        return
+      }
+
+      pendingLibraryNavigation.current = null
+    }
+
+    const routes = readLibraryRoutes()
+    routes[mode] = currentRoute
+    writeLibraryRoutes(routes)
+  }, [mode, currentRoute])
 
   useEffect(() => {
     if (!currentUserId) return
@@ -825,9 +958,34 @@ function AppShell() {
   }, [])
 
   function changeMode(nextMode: MediaMode) {
+    if (nextMode === mode) return
+
+    const routes = readLibraryRoutes()
+
+    // Save the route being left under its own library.
+    routes[mode] = currentRoute
+
+    // Restore the last route visited in the destination library.
+    const destination = normalizeInternalRoute(routes[nextMode])
+
+    writeLibraryRoutes(routes)
+
+    // Prevent an intermediate render from saving the old route
+    // under the newly selected library.
+    pendingLibraryNavigation.current = {
+      mode: nextMode,
+      route: destination,
+    }
+
     setMode(nextMode)
-    window.localStorage.setItem('movie-hunt-mode', nextMode)
-    navigate('/')
+
+    try {
+      window.localStorage.setItem('movie-hunt-mode', nextMode)
+    } catch {
+      // The in-memory library switch still works if storage is unavailable.
+    }
+
+    navigate(destination, { replace: true })
   }
 
 
@@ -844,7 +1002,7 @@ function AppShell() {
       <div className="min-w-0 flex-1">
         <main className="mx-auto max-w-[1440px] px-4 pb-36 pt-3 sm:px-7 sm:pt-4 lg:px-10 lg:pb-12">
 
-          <div className="mb-2 flex min-h-9 items-center justify-between gap-3">
+          <div className="mb-2 flex min-h-7 items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2 whitespace-nowrap text-xs text-zinc-500">
               <span>Movie Hunt</span>
               <ChevronRight size={13} />
@@ -1067,7 +1225,7 @@ function HomePage() {
     }))
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-5">
       <FeaturedCarousel
         eyebrow="This week on TMDB"
         slides={featuredSlides}
@@ -1159,32 +1317,122 @@ function HomePage() {
   )
 }
 
+type MovieDiscoveryPreferences = {
+  query: string
+  selectedGenre: number | null
+  page: number
+  sortBy: string
+  year: string
+  minRating: string
+}
+
+const MOVIE_DISCOVERY_DEFAULTS: MovieDiscoveryPreferences = {
+  query: '',
+  selectedGenre: null,
+  page: 1,
+  sortBy: 'popularity.desc',
+  year: '',
+  minRating: '',
+}
+
 
 function DiscoverPage() {
-  const [query, setQuery] = useState('')
-  const [debouncedQuery, setDebouncedQuery] = useState('')
-  const [selectedGenre, setSelectedGenre] = useState<number | null>(null)
-  const [page, setPage] = useState(1)
-  const genres = useTmdbData<{ genres: TmdbGenre[] }>('/api/tmdb/genres')
+  const [discovery, setDiscovery] =
+    useStoredDiscoveryState<MovieDiscoveryPreferences>(
+      'movie-hunt-movie-discovery',
+      MOVIE_DISCOVERY_DEFAULTS,
+    )
+
+  const {
+    query,
+    selectedGenre,
+    page,
+    sortBy,
+    year,
+    minRating,
+  } = discovery
+
+  const [debouncedQuery, setDebouncedQuery] = useState(query)
+
+  const genres = useTmdbData<{ genres: TmdbGenre[] }>(
+    '/api/tmdb/genres',
+  )
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setDebouncedQuery(query.trim()), 350)
+    const timeout = window.setTimeout(
+      () => setDebouncedQuery(query.trim()),
+      350,
+    )
+
     return () => window.clearTimeout(timeout)
   }, [query])
+
+  const setPage = useCallback(
+    (nextPage: number | ((current: number) => number)) => {
+      setDiscovery((current) => ({
+        ...current,
+        page:
+          typeof nextPage === 'function'
+            ? nextPage(current.page)
+            : nextPage,
+      }))
+    },
+    [setDiscovery],
+  )
+
+  function updateFilters(
+    changes: Partial<MovieDiscoveryPreferences>,
+  ) {
+    setDiscovery((current) => ({
+      ...current,
+      ...changes,
+      page: 1,
+    }))
+  }
 
   const buildMoviesPageUrl = useCallback(
     (targetPage: number) => {
       if (debouncedQuery) {
-        return `/api/tmdb/search?query=${encodeURIComponent(debouncedQuery)}&page=${targetPage}`
+        const params = new URLSearchParams({
+          query: debouncedQuery,
+          page: String(targetPage),
+        })
+
+        if (year) params.set('year', year)
+
+        return `/api/tmdb/search?${params.toString()}`
       }
 
-      if (selectedGenre) {
-        return `/api/tmdb/discover?with_genres=${selectedGenre}&page=${targetPage}`
+      const hasFilters =
+        selectedGenre !== null ||
+        sortBy !== 'popularity.desc' ||
+        Boolean(year) ||
+        Boolean(minRating)
+
+      if (!hasFilters) {
+        return `/api/tmdb/popular?page=${targetPage}`
       }
 
-      return `/api/tmdb/popular?page=${targetPage}`
+      const params = new URLSearchParams({
+        page: String(targetPage),
+        sort_by: sortBy,
+      })
+
+      if (selectedGenre !== null) {
+        params.set('with_genres', String(selectedGenre))
+      }
+
+      if (year) {
+        params.set('primary_release_year', year)
+      }
+
+      if (minRating) {
+        params.set('vote_average.gte', minRating)
+      }
+
+      return `/api/tmdb/discover?${params.toString()}`
     },
-    [debouncedQuery, selectedGenre],
+    [debouncedQuery, selectedGenre, sortBy, year, minRating],
   )
 
   const moviesUrl = buildMoviesPageUrl(page)
@@ -1194,8 +1442,53 @@ function DiscoverPage() {
     movies.data?.total_pages ?? 1,
     500,
   )
+
+  const displayedMovies = useMemo(() => {
+    let results = [...(movies.data?.results ?? [])]
+
+    // TMDB text search is relevance-ranked. These extra controls
+    // are applied locally to the currently loaded search page.
+    if (debouncedQuery) {
+      if (minRating) {
+        results = results.filter(
+          (movie) => (movie.vote_average ?? 0) >= Number(minRating),
+        )
+      }
+
+      results.sort((a, b) => {
+        switch (sortBy) {
+          case 'popularity.asc':
+            return (a.popularity ?? 0) - (b.popularity ?? 0)
+
+          case 'vote_average.desc':
+            return (b.vote_average ?? 0) - (a.vote_average ?? 0)
+
+          case 'vote_average.asc':
+            return (a.vote_average ?? 0) - (b.vote_average ?? 0)
+
+          case 'primary_release_date.desc':
+            return (b.release_date ?? '').localeCompare(a.release_date ?? '')
+
+          case 'primary_release_date.asc':
+            return (a.release_date ?? '').localeCompare(b.release_date ?? '')
+
+          case 'title.asc':
+            return a.title.localeCompare(b.title)
+
+          case 'title.desc':
+            return b.title.localeCompare(a.title)
+
+          default:
+            return (b.popularity ?? 0) - (a.popularity ?? 0)
+        }
+      })
+    }
+
+    return results
+  }, [movies.data?.results, debouncedQuery, minRating, sortBy])
+
+  // Prefetch two adjacent pages in either direction.
   useEffect(() => {
-    // Wait until the current query has settled and its results are available.
     if (
       !movies.data ||
       query.trim() !== debouncedQuery ||
@@ -1229,58 +1522,218 @@ function DiscoverPage() {
   ])
 
   function chooseGenre(id: number | null) {
-    setSelectedGenre(id)
-    setQuery('')
+    setDiscovery((current) => ({
+      ...current,
+      selectedGenre: id,
+      query: '',
+      page: 1,
+    }))
+
     setDebouncedQuery('')
-    setPage(1)
   }
+
+  const currentYear = new Date().getFullYear()
+  const years = Array.from(
+    { length: currentYear - 1970 + 1 },
+    (_, index) => currentYear - index,
+  )
 
   return (
     <div>
       <PageIntro
         eyebrow="Explore the catalogue"
         title="Find something worth watching."
-        description="Search the TMDB movie catalogue or browse popular films by genre."
+        description="Search the TMDB movie catalogue or browse and sort films by genre, release year and rating."
       />
-      <div className="mb-6 flex max-w-2xl items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3">
+
+      {/* Search */}
+      <div className="mb-5 flex max-w-2xl items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3">
         <Search size={17} className="shrink-0 text-zinc-500" />
+
         <input
           value={query}
-          onChange={(event) => { setQuery(event.target.value); setPage(1) }}
+          onChange={(event) => {
+            setDiscovery((current) => ({
+              ...current,
+              query: event.target.value,
+              selectedGenre: null,
+              page: 1,
+            }))
+          }}
           placeholder="Search movie titles..."
           className="w-full bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
         />
-        {query && <button type="button" onClick={() => setQuery('')} className="text-xs text-zinc-500 hover:text-white">Clear</button>}
+
+        {query && (
+          <button
+            type="button"
+            onClick={() => {
+              setDiscovery((current) => ({
+                ...current,
+                query: '',
+                page: 1,
+              }))
+              setDebouncedQuery('')
+            }}
+            className="text-xs text-zinc-500 hover:text-white"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
+      {/* Sorting and filters */}
+      <div className="mb-7 grid gap-3 sm:grid-cols-3">
+        <label className="block">
+          <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+            Sort by
+          </span>
+          <select
+            value={sortBy}
+            onChange={(event) =>
+              updateFilters({ sortBy: event.target.value })
+            }
+            className="w-full rounded-xl border border-white/10 bg-[#151518] px-3 py-3 text-xs text-zinc-200 outline-none focus:border-amber-300/40"
+          >
+            <option value="popularity.desc">Most popular</option>
+            <option value="vote_average.desc">Highest rated</option>
+            <option value="primary_release_date.desc">Newest releases</option>
+            <option value="primary_release_date.asc">Oldest releases</option>
+            <option value="title.asc">Title A–Z</option>
+            <option value="title.desc">Title Z–A</option>
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+            Release year
+          </span>
+          <select
+            value={year}
+            onChange={(event) =>
+              updateFilters({ year: event.target.value })
+            }
+            className="w-full rounded-xl border border-white/10 bg-[#151518] px-3 py-3 text-xs text-zinc-200 outline-none focus:border-amber-300/40"
+          >
+            <option value="">Any year</option>
+            {years.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+            Minimum rating
+          </span>
+          <select
+            value={minRating}
+            onChange={(event) =>
+              updateFilters({ minRating: event.target.value })
+            }
+            className="w-full rounded-xl border border-white/10 bg-[#151518] px-3 py-3 text-xs text-zinc-200 outline-none focus:border-amber-300/40"
+          >
+            <option value="">Any rating</option>
+            <option value="5">5.0 and above</option>
+            <option value="6">6.0 and above</option>
+            <option value="7">7.0 and above</option>
+            <option value="8">8.0 and above</option>
+          </select>
+        </label>
+      </div>
+
+      {/* Genres */}
       <div className="mb-7">
-        <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">Browse by genre</div>
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">
+            Browse by genre
+          </div>
+
+          {selectedGenre !== null && (
+            <button
+              type="button"
+              onClick={() => chooseGenre(null)}
+              className="text-xs text-amber-300 hover:text-amber-200"
+            >
+              Clear genre
+            </button>
+          )}
+        </div>
+
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => chooseGenre(null)} className={`rounded-full border px-3 py-2 text-xs transition ${selectedGenre === null ? 'border-amber-300/30 bg-amber-300/10 text-amber-200' : 'border-white/10 text-zinc-400 hover:bg-white/5'}`}>All movies</button>
+          <button
+            type="button"
+            onClick={() => chooseGenre(null)}
+            aria-pressed={selectedGenre === null}
+            className={`rounded-full border px-3 py-2 text-xs transition ${selectedGenre === null
+                ? 'border-amber-300/30 bg-amber-300/10 text-amber-200'
+                : 'border-white/10 text-zinc-400 hover:bg-white/5'
+              }`}
+          >
+            All movies
+          </button>
+
           {genres.data?.genres?.map((genre) => (
-            <button key={genre.id} onClick={() => chooseGenre(genre.id)} className={`rounded-full border px-3 py-2 text-xs transition ${selectedGenre === genre.id ? 'border-amber-300/30 bg-amber-300/10 text-amber-200' : 'border-white/10 text-zinc-400 hover:bg-white/5'}`}>
+            <button
+              key={genre.id}
+              type="button"
+              onClick={() => chooseGenre(genre.id)}
+              aria-pressed={selectedGenre === genre.id}
+              className={`rounded-full border px-3 py-2 text-xs transition ${selectedGenre === genre.id
+                  ? 'border-amber-300/30 bg-amber-300/10 text-amber-200'
+                  : 'border-white/10 text-zinc-400 hover:bg-white/5'
+                }`}
+            >
               {genre.name}
             </button>
           ))}
         </div>
-        {genres.error && <p className="mt-2 text-xs text-rose-300">Could not load genres: {genres.error}</p>}
+
+        {genres.error && (
+          <p className="mt-2 text-xs text-rose-300">
+            Could not load genres: {genres.error}
+          </p>
+        )}
       </div>
 
+      {/* Results */}
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-zinc-300">
-          {debouncedQuery ? `Search results for “${debouncedQuery}”` : selectedGenre ? genres.data?.genres.find((genre) => genre.id === selectedGenre)?.name ?? 'Filtered movies' : 'Popular movies'}
+          {debouncedQuery
+            ? `Search results for “${debouncedQuery}”`
+            : selectedGenre !== null
+              ? genres.data?.genres.find(
+                (genre) => genre.id === selectedGenre,
+              )?.name ?? 'Filtered movies'
+              : 'Movies'}
         </h2>
-        <span className="text-xs text-zinc-600">{movies.data?.total_results?.toLocaleString() ?? '—'} titles</span>
-      </div>
-      <MovieGrid movies={movies.data?.results ?? []} loading={movies.loading || (Boolean(query.trim()) && query.trim() !== debouncedQuery)} error={movies.error} emptyMessage="Try a different title or genre." />
 
+        <span className="text-xs text-zinc-600">
+          {displayedMovies.length.toLocaleString()} shown
+          {movies.data
+            ? ` · ${movies.data.total_results.toLocaleString()} total`
+            : ''}
+        </span>
+      </div>
+
+      <MovieGrid
+        movies={displayedMovies}
+        loading={
+          movies.loading ||
+          (Boolean(query.trim()) && query.trim() !== debouncedQuery)
+        }
+        error={movies.error}
+        emptyMessage="No movies match these filters. Try changing your selection."
+      />
 
       {movies.data && maxPages > 1 && (
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <button
             disabled={page <= 1 || movies.loading}
             onClick={() => setPage((current) => Math.max(1, current - 1))}
-            className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 disabled:opacity-30"
+            className="cursor-pointer rounded-lg border border-white/10 bg-white/[0.02] px-4 py-2 text-xs font-medium text-zinc-300 transition-all duration-150 enabled:hover:-translate-y-0.5 enabled:hover:border-amber-400/50 enabled:hover:bg-amber-500/10 enabled:hover:text-white enabled:active:translate-y-0 enabled:active:scale-95 enabled:active:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60 disabled:cursor-not-allowed disabled:opacity-30"
           >
             Previous
           </button>
@@ -1289,6 +1742,14 @@ function DiscoverPage() {
             Page {page} of {maxPages}
           </span>
 
+          <button
+            disabled={page >= maxPages || movies.loading}
+            onClick={() => setPage((current) => Math.min(maxPages, current + 1))}
+            className="cursor-pointer rounded-lg border border-white/10 bg-white/[0.02] px-4 py-2 text-xs font-medium text-zinc-300 transition-all duration-150 enabled:hover:-translate-y-0.5 enabled:hover:border-amber-400/50 enabled:hover:bg-amber-500/10 enabled:hover:text-white enabled:active:translate-y-0 enabled:active:scale-95 enabled:active:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            Next
+          </button>
+
           <PageJump
             key={`${page}-${query}-${selectedGenre ?? 'all'}`}
             page={page}
@@ -1296,20 +1757,14 @@ function DiscoverPage() {
             onGo={setPage}
             accent="amber"
           />
-
-          <button
-            disabled={page >= maxPages || movies.loading}
-            onClick={() => setPage((current) => Math.min(maxPages, current + 1))}
-            className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 disabled:opacity-30"
-          >
-            Next
-          </button>
         </div>
       )}
-
     </div>
   )
 }
+
+
+
 
 type WatchlistStatus = 'want_to_watch' | 'watching' | 'watched' | 'dropped'
 
@@ -1809,9 +2264,6 @@ function AiPage() {
             {loading ? 'Finding your next film…' : 'Generate recommendations'}
           </button>
         </form>
-        <p className="mt-4 text-[10px] leading-5 text-zinc-600">
-          Privacy: only your own movie titles, ratings and genre signals are used for personalization. When Gemini is configured, these preference signals and your optional prompt are sent to Google to generate recommendations. Your email and account details are not sent.
-        </p>
       </section>
 
       {error && <div className="rounded-xl border border-rose-400/15 bg-rose-400/5 p-4 text-sm text-rose-300">{error}</div>}
