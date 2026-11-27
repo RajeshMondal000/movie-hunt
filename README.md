@@ -4,7 +4,7 @@
 
 > Movie Hunt is a full-stack, friends-oriented movie and anime discovery platform. It combines a React single-page application with a Cloudflare Worker API, persistent D1 storage, Google sign-in, third-party media catalogues, and a hybrid recommendation flow.
 
-![Main Interface](docs\screenshots\01-movies-home.png)
+![Movies home](docs/screenshots/01-movies-home.png)
 
 ## Features
 
