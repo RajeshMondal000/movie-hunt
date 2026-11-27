@@ -51,12 +51,12 @@
   { "name": "RL_GENERAL_MEMBER", "namespace_id": "92611003", "simple": { "limit": 180, "period": 60 } },
   { "name": "RL_GENERAL_ADMIN", "namespace_id": "92611004", "simple": { "limit": 600, "period": 60 } },
 
-  { "name": "RL_DISCOVERY_GUEST", "namespace_id": "92611021", "simple": { "limit": 20, "period": 60 } },
-  { "name": "RL_DISCOVERY_MEMBER", "namespace_id": "92611022", "simple": { "limit": 60, "period": 60 } },
+  { "name": "RL_DISCOVERY_GUEST", "namespace_id": "92611021", "simple": { "limit": 30, "period": 60 } },
+  { "name": "RL_DISCOVERY_MEMBER", "namespace_id": "92611022", "simple": { "limit": 90, "period": 60 } },
   { "name": "RL_DISCOVERY_ADMIN", "namespace_id": "92611023", "simple": { "limit": 180, "period": 60 } },
 
-  { "name": "RL_SEARCH_GUEST", "namespace_id": "92611005", "simple": { "limit": 8, "period": 60 } },
-  { "name": "RL_SEARCH_MEMBER", "namespace_id": "92611006", "simple": { "limit": 24, "period": 60 } },
+  { "name": "RL_SEARCH_GUEST", "namespace_id": "92611005", "simple": { "limit": 12, "period": 60 } },
+  { "name": "RL_SEARCH_MEMBER", "namespace_id": "92611006", "simple": { "limit": 36, "period": 60 } },
   { "name": "RL_SEARCH_ADMIN", "namespace_id": "92611007", "simple": { "limit": 60, "period": 60 } },
 
   { "name": "RL_WRITE_GUEST", "namespace_id": "92611008", "simple": { "limit": 10, "period": 60 } },

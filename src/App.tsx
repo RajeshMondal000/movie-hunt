@@ -29,6 +29,7 @@ import { authClient } from './lib/auth-client'
 import { FeaturedCarousel } from './components/FeaturedCarousel'
 import { PageJump } from './components/PageJump'
 import { useLocation } from 'react-router-dom'
+import { RateLimitNotice } from './components/RateLimitNotice'
 
 import {
   Link,
@@ -218,10 +219,10 @@ function ProfileNavLink({
         {statusLabel && (
           <span
             className={`max-w-full truncate font-bold uppercase tracking-wide ${isSignIn
-                ? 'text-[8.5px] text-red-400 drop-shadow-[0_0_6px_rgba(248,113,113,0.85)]'
-                : isYellowBadge
-                  ? 'text-[7px] text-amber-300 drop-shadow-[0_0_6px_rgba(251,191,36,0.75)]'
-                  : 'text-[7px] text-zinc-500'
+              ? 'text-[8.5px] text-red-400 drop-shadow-[0_0_6px_rgba(248,113,113,0.85)]'
+              : isYellowBadge
+                ? 'text-[7px] text-amber-300 drop-shadow-[0_0_6px_rgba(251,191,36,0.75)]'
+                : 'text-[7px] text-zinc-500'
               }`}
           >
             {statusLabel}
@@ -1108,6 +1109,10 @@ function AppShell() {
           account={account}
         />
       </div>
+      <RateLimitNotice
+        signedIn={Boolean(session?.user)}
+        isGuest={account?.isAnonymous === true}
+      />
     </div>
   )
 
@@ -1668,8 +1673,8 @@ function DiscoverPage() {
             onClick={() => chooseGenre(null)}
             aria-pressed={selectedGenre === null}
             className={`rounded-full border px-3 py-2 text-xs transition ${selectedGenre === null
-                ? 'border-amber-300/30 bg-amber-300/10 text-amber-200'
-                : 'border-white/10 text-zinc-400 hover:bg-white/5'
+              ? 'border-amber-300/30 bg-amber-300/10 text-amber-200'
+              : 'border-white/10 text-zinc-400 hover:bg-white/5'
               }`}
           >
             All movies
@@ -1682,8 +1687,8 @@ function DiscoverPage() {
               onClick={() => chooseGenre(genre.id)}
               aria-pressed={selectedGenre === genre.id}
               className={`rounded-full border px-3 py-2 text-xs transition ${selectedGenre === genre.id
-                  ? 'border-amber-300/30 bg-amber-300/10 text-amber-200'
-                  : 'border-white/10 text-zinc-400 hover:bg-white/5'
+                ? 'border-amber-300/30 bg-amber-300/10 text-amber-200'
+                : 'border-white/10 text-zinc-400 hover:bg-white/5'
                 }`}
             >
               {genre.name}

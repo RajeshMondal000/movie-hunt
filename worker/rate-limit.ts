@@ -202,7 +202,10 @@ async function hitBinding(
     const result = await binding.limit({ key })
     return result.success
       ? null
-      : makeRateLimitResponse('rate_limit_exceeded', 'Too many requests. Please slow down and try again.')
+      : makeRateLimitResponse(
+        'rate_limit_exceeded',
+        'You have reached the current request limit. Please wait before trying again.',
+      )
   } catch (error) {
     // Cloudflare's native limiter is burst protection, not the authoritative
     // daily quota store. If it fails, keep the app available and log it.

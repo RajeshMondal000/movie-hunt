@@ -1,11 +1,10 @@
 # Movie Hunt
 
-> Discover movies and anime, manage your watchlists, get personalized recommendations, and share picks with friends.
+## Live app:** <https://movie-hunt.rjmn.workers.dev/>  
 
-**Live app:** <https://movie-hunt.rjmn.workers.dev/>  
-**Repository:** <https://github.com/RajeshMondal000/movie-hunt>
+> Movie Hunt is a full-stack, friends-oriented movie and anime discovery platform. It combines a React single-page application with a Cloudflare Worker API, persistent D1 storage, Google sign-in, third-party media catalogues, and a hybrid recommendation flow.
 
-Movie Hunt is a full-stack, friends-oriented movie and anime discovery platform. It combines a React single-page application with a Cloudflare Worker API, persistent D1 storage, Google sign-in, third-party media catalogues, and a hybrid recommendation flow.
+![Main Interface](docs\screenshots\01-movies-home.png)
 
 ## Features
 
@@ -53,6 +52,68 @@ The React app is delivered as static assets by the same Cloudflare Worker deploy
 ## Database
 
 D1 contains 16 application tables covering authentication, cached catalogue data, personal lists and reviews, and social features. Movie and anime records use separate catalogue and list tables. See [docs/DATABASE.md](docs/DATABASE.md) for the ER diagram, constraints, and migration history.
+
+
+## Rate Limiting and Usage Quotas
+
+Movie Hunt implements tier-based rate limiting to protect its APIs, external service credentials, and database resources while maintaining a usable experience for guests and registered members.
+
+### Minute-Level API Rate Limits
+
+| API Category | Public Visitor | Guest | Registered Member | Administrator |
+|---|---:|---:|---:|---:|
+| General API requests | 30/min | 60/min | 180/min | 600/min |
+| Catalogue discovery (popular, trending, details, genres) | 30/min | 30/min | 90/min | 180/min |
+| Movie and anime search | 12/min | 12/min | 36/min | 60/min |
+| Watchlist and review mutations | — | 10/min | 30/min | 120/min |
+| AI recommendation submissions | — | 1/min | 3/min | 10/min |
+| Social and member-directory reads | — | Restricted | 30/min | 120/min |
+| Profile updates | — | Blocked | 5/min | 30/min |
+| Administrative endpoints | — | — | — | 30/min |
+
+**Note:** General API and category-specific limits are cumulative. Each applicable request consumes from both buckets. Public visitors and guests share the same Discovery and Search category limits.
+
+### Daily Usage Quotas
+
+| Operation | Guest | Registered Member | Administrator |
+|---|---:|---:|---:|
+| Combined movie/anime watchlist and review mutations | 40/day | 120/day | 2,000/day |
+| AI recommendation submissions | 3/day | 12/day | 400/day |
+| Friend requests | Not allowed | 10/day* | 50/day |
+| Recommendation sharing | Not allowed | Not allowed | 100/day* |
+
+*Friend requests and recommendation sharing require an approved account.*
+
+### Authentication Protection
+
+| Operation | Limit |
+|---|---:|
+| Google sign-in attempts | 5/min/IP |
+| Guest sign-in attempts | 2/min/IP |
+| Guest account creation | 10/day/IP |
+
+### Gemini API Protection
+
+| Resource | Application-Level Limit |
+|---|---:|
+| Gemini API attempts | 12 per rolling 60 seconds |
+| Gemini API attempts | 450 per Pacific calendar day |
+| Guest AI submissions | 3/day |
+| Registered member AI submissions | 12/day |
+| Administrator AI submissions | 400/day |
+
+The shared Gemini request limits apply across both Movie and Anime recommendation systems. When the provider-level application quota is exhausted, Movie Hunt uses its local recommendation algorithm as a fallback.
+
+### Enforcement Architecture
+
+- **Cloudflare Rate Limiting bindings:** Provide minute-level burst protection using account or IP-based identities. These counters are approximate and location-local.
+- **Cloudflare D1:** Maintains authoritative daily counters for library mutations, AI submissions, social actions, guest creation, and Gemini API attempts.
+- **Client-side caching:** Reuses previously loaded catalogue responses for five minutes and avoids unnecessary repeat requests during navigation.
+- **Background preloading:** Fetches neighbouring Discovery pages to improve navigation responsiveness.
+- **Rate-limit notifications:** Displays contextual notifications when an API request is rejected, including sign-in guidance for public visitors and guests.
+
+Daily application quotas reset at midnight Pacific Time.
+
 
 ## Run locally
 
